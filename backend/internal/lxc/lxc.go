@@ -1187,6 +1187,7 @@ func (m *Manager) applyResourceLimits(lxcName string, cfg ContainerConfig) error
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		if !strings.Contains(trimmed, "# clicd managed") &&
+			!strings.HasPrefix(trimmed, "lxc.cgroup2.memory.swap.max") &&
 			!strings.HasPrefix(trimmed, "lxc.cgroup2.memory.max") &&
 			!strings.HasPrefix(trimmed, "lxc.cgroup2.cpuset.cpus") &&
 			!strings.HasPrefix(trimmed, "lxc.cgroup2.cpu.max") &&
@@ -1240,6 +1241,9 @@ func (m *Manager) applyResourceLimits(lxcName string, cfg ContainerConfig) error
 	if cfg.RAMMB > 0 {
 		ramBytes := int64(cfg.RAMMB) * 1024 * 1024
 		newLines = append(newLines, fmt.Sprintf("lxc.cgroup2.memory.max = %d", ramBytes))
+	}
+	if persisted := config.FindContainerByName(cfg.Name); persisted != nil && persisted.SwapConfigured {
+		newLines = append(newLines, fmt.Sprintf("lxc.cgroup2.memory.swap.max = %d", int64(persisted.SwapMB)*1024*1024))
 	}
 	if cfg.IOReadMBps > 0 || cfg.IOWriteMBps > 0 {
 		// Note: lxc.cgroup2.io.max is skipped for unprivileged containers because
@@ -2124,6 +2128,9 @@ func (m *Manager) StartContainer(id int) error {
 	if c == nil {
 		return fmt.Errorf("container not found: %d", id)
 	}
+	if c.BillingBlocked() || IsExpired(*c) || (IsTrafficExceeded(*c) && !WHMCSTrafficManaged(*c)) {
+		return fmt.Errorf("LXC instance is restricted, expired, or over traffic quota")
+	}
 	lxcName := c.LxcName()
 	previousNAT6 := c.IPv6NATAddress
 	if err := prepareIPv6NATAddress(c); err != nil {
@@ -2153,6 +2160,7 @@ func (m *Manager) StartContainer(id int) error {
 			Name:             c.Name,
 			TemplateID:       c.Template,
 			VCPU:             c.VCPU,
+			CPUPercent:       c.CPUPercent,
 			RAMMB:            c.RAMMB,
 			DiskGB:           c.DiskGB,
 			NetworkBWMbps:    c.NetworkBWMbps,
@@ -2249,6 +2257,15 @@ func (m *Manager) StartContainer(id int) error {
 }
 
 func (m *Manager) startLXCContainerDaemon(lxcName string) (string, string, []byte, error) {
+	for i := range config.AppConfig.Containers {
+		c := &config.AppConfig.Containers[i]
+		if c.LxcName() == lxcName {
+			if err := m.prepareWHMCSQuotaStart(c); err != nil {
+				return "", "", nil, err
+			}
+			break
+		}
+	}
 	logFile := filepath.Join(os.TempDir(), "clicd-"+lxcName+"-start.log")
 	consoleLog := filepath.Join(os.TempDir(), "clicd-"+lxcName+"-console.log")
 	os.Remove(logFile)
@@ -2296,6 +2313,7 @@ func (m *Manager) ApplyContainerLimits(c *config.Container) error {
 		Name:             c.Name,
 		TemplateID:       c.Template,
 		VCPU:             c.VCPU,
+		CPUPercent:       c.CPUPercent,
 		RAMMB:            c.RAMMB,
 		DiskGB:           c.DiskGB,
 		NetworkBWMbps:    c.NetworkBWMbps,
@@ -2315,7 +2333,11 @@ func (m *Manager) ApplyContainerLimits(c *config.Container) error {
 	}
 
 	// CPU: write cpu.max
-	cpuQuota := int(c.VCPU * 100000)
+	pct := c.CPUPercent
+	if pct <= 0 || pct > 100 {
+		pct = 100
+	}
+	cpuQuota := int(c.VCPU * float64(pct) / 100 * 100000)
 	cpuLine := fmt.Sprintf("%d 100000", cpuQuota)
 	for _, path := range []string{
 		fmt.Sprintf("/sys/fs/cgroup/lxc/%s/cpu.max", lxcName),
@@ -2324,6 +2346,24 @@ func (m *Manager) ApplyContainerLimits(c *config.Container) error {
 		os.WriteFile(path, []byte(cpuLine), 0644)
 	}
 
+	if c.SwapConfigured {
+		found := false
+		var lastErr error
+		for _, p := range []string{fmt.Sprintf("/sys/fs/cgroup/lxc/%s/memory.swap.max", lxcName), fmt.Sprintf("/sys/fs/cgroup/lxc.payload.%s/memory.swap.max", lxcName)} {
+			if _, err := os.Stat(p); err == nil {
+				found = true
+				if err = os.WriteFile(p, []byte(fmt.Sprint(int64(c.SwapMB)*1024*1024)), 0644); err != nil {
+					lastErr = err
+				}
+			}
+		}
+		if !found {
+			return fmt.Errorf("container swap controller unavailable")
+		}
+		if lastErr != nil {
+			return lastErr
+		}
+	}
 	// Memory: write memory.max
 	ramBytes := int64(c.RAMMB) * 1024 * 1024
 	memLine := fmt.Sprintf("%d", ramBytes)
@@ -2403,6 +2443,9 @@ func (m *Manager) getContainerVethByNS(lxcName string) string {
 
 // StopContainer stops an LXC container by its ID
 func (m *Manager) StopContainer(id int) error {
+	if c := config.FindContainer(id); c != nil && WHMCSTrafficManaged(*c) && c.Status == "running" {
+		m.GetTrafficInfo(id)
+	}
 	c := config.FindContainer(id)
 	if c == nil {
 		return fmt.Errorf("container not found: %d", id)
@@ -2689,6 +2732,7 @@ func (m *Manager) DestroyContainer(id int) error {
 	if err := m.CleanupDataDisks(&diskSnapshot); err != nil {
 		return err
 	}
+	m.removeWHMCSQuota(c)
 	if !config.RemoveContainer(id) {
 		return fmt.Errorf("container destroyed but config entry was not removed: %d", id)
 	}
@@ -3692,6 +3736,7 @@ func (m *Manager) ReinstallContainer(id int, templateID string, authConfig ...Co
 		Name:             c.Name,
 		TemplateID:       templateID,
 		VCPU:             c.VCPU,
+		CPUPercent:       c.CPUPercent,
 		RAMMB:            c.RAMMB,
 		DiskGB:           c.DiskGB,
 		NetworkBWMbps:    c.NetworkBWMbps,
@@ -4180,6 +4225,14 @@ func (m *Manager) AccumulateTraffic() {
 			}
 		}
 		lastTrafficSnapshot[c.LxcName()] = trafficSample{RXBytes: rx, TXBytes: tx}
+		if err := m.syncWHMCSQuotaLocked(c, "", false); err != nil {
+			fmt.Printf("Traffic quota unavailable for %s: %v\n", c.Name, err)
+			if WHMCSTrafficManaged(*c) {
+				exec.Command("lxc-stop", "-n", c.LxcName(), "-k").Run()
+				c.Status = "stopped"
+				changed = true
+			}
+		}
 	}
 	if changed {
 		config.SaveConfig()
@@ -4188,6 +4241,8 @@ func (m *Manager) AccumulateTraffic() {
 
 // GetTrafficInfo returns traffic usage info for a container
 func (m *Manager) GetTrafficInfo(id int) map[string]interface{} {
+	lastTrafficSnapshotMu.Lock()
+	defer lastTrafficSnapshotMu.Unlock()
 	c := config.FindContainer(id)
 	if c == nil {
 		return nil
@@ -4201,7 +4256,6 @@ func (m *Manager) GetTrafficInfo(id int) map[string]interface{} {
 	}
 
 	// Accumulate new delta since last call
-	lastTrafficSnapshotMu.Lock()
 	if c.Status == "running" {
 		rx, tx := m.getContainerNetworkBytes(c.LxcName())
 		prev, exists := lastTrafficSnapshot[c.LxcName()]
@@ -4212,8 +4266,11 @@ func (m *Manager) GetTrafficInfo(id int) map[string]interface{} {
 		}
 		lastTrafficSnapshot[c.LxcName()] = trafficSample{RXBytes: rx, TXBytes: tx}
 	}
-	lastTrafficSnapshotMu.Unlock()
-
+	if c.Status == "running" {
+		if err := m.syncWHMCSQuotaLocked(c, "", false); err != nil {
+			fmt.Printf("Traffic quota unavailable for %s: %v\n", c.Name, err)
+		}
+	}
 	totalUsed := c.TrafficUsedRX + c.TrafficUsedTX
 	limitGB := 0
 	usedPct := 0.0
@@ -4252,6 +4309,7 @@ func (m *Manager) GetTrafficInfo(id int) map[string]interface{} {
 		"out_limit_gb":     c.TrafficOutGB,
 		"used_pct":         usedPct,
 		"reset_date":       c.TrafficResetDate,
+		"overage_mbps":     2, "throttled": WHMCSTrafficManaged(*c) && isTrafficExceeded(*c),
 	}
 }
 

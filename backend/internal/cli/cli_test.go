@@ -5,20 +5,6 @@ import (
 	"testing"
 )
 
-func TestSafeReleaseBackupComponent(t *testing.T) {
-	tests := map[string]string{
-		"v1.2.3":              "1.2.3",
-		" release/candidate ": "release_candidate",
-		"../../etc/passwd":    "etc_passwd",
-		"":                    "unknown",
-	}
-	for input, want := range tests {
-		if got := safeReleaseBackupComponent(input); got != want {
-			t.Fatalf("safeReleaseBackupComponent(%q) = %q, want %q", input, got, want)
-		}
-	}
-}
-
 func TestReleaseArchiveAssetName(t *testing.T) {
 	tests := map[string]string{
 		"amd64": "clicd-linux-amd64.tar.gz",
@@ -36,20 +22,6 @@ func TestReleaseArchiveAssetName(t *testing.T) {
 
 	if _, err := releaseArchiveAssetName("386"); err == nil {
 		t.Fatal("releaseArchiveAssetName(386) error = nil, want unsupported architecture")
-	}
-}
-
-func TestCopyFileToBackupRejectsUnsafeFileName(t *testing.T) {
-	unsafeNames := []string{
-		"../clicd",
-		"..\\clicd",
-		"subdir/clicd",
-		"",
-	}
-	for _, name := range unsafeNames {
-		if _, err := copyFileToBackup("missing-source", name, 0755); err == nil || !strings.Contains(err.Error(), "unsafe backup file name") {
-			t.Fatalf("copyFileToBackup(%q) error = %v, want unsafe backup file name", name, err)
-		}
 	}
 }
 

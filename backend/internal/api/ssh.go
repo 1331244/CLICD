@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"clicd/internal/config"
+ "clicd/internal/lxc"
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/crypto/ssh"
@@ -26,6 +27,7 @@ type terminalResizeMessage struct {
 }
 
 type webSSHTicket struct {
+ ContainerUUID string
 	ContainerName string
 	ExpiresAt     time.Time
 }
@@ -61,11 +63,13 @@ func HandleWebSSHTicket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ticket := randomHex(32)
+	if c.BillingBlocked() || lxc.IsExpired(*c) {jsonResponse(w,403,APIResponse{Success:false,Message:"Instance is restricted or expired"});return}
+ ticket := randomHex(32)
 	webSSHTickets.Lock()
 	cleanupExpiredWebSSHTicketsLocked(time.Now())
 	webSSHTickets.items[ticket] = webSSHTicket{
 		ContainerName: req.ContainerName,
+ ContainerUUID: c.UUID,
 		ExpiresAt:     time.Now().Add(60 * time.Second),
 	}
 	webSSHTickets.Unlock()
@@ -101,7 +105,8 @@ func HandleWebSSH(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "container not found", http.StatusNotFound)
 		return
 	}
-	if c.Status != "running" {
+	if c.BillingBlocked() || lxc.IsExpired(*c) {http.Error(w,"Instance is restricted or expired",403);return}
+ if c.Status != "running" {
 		http.Error(w, "container is not running", http.StatusBadRequest)
 		return
 	}
@@ -144,6 +149,8 @@ func HandleWebSSH(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer ws.Close()
+ restrictionDone:=make(chan struct{});defer close(restrictionDone)
+ go watchWHMCSRestriction(c.UUID,func(){_ = ws.Close()},restrictionDone)
 
 	if c.SSHPassword == "" {
 		if c.IsKVM() {
@@ -374,7 +381,7 @@ func consumeWebSSHTicket(ticket, containerName string) (webSSHTicket, bool) {
 		return webSSHTicket{}, false
 	}
 	delete(webSSHTickets.items, ticket)
-	return item, item.ContainerName == containerName && now.Before(item.ExpiresAt)
+	c:=config.FindContainerByName(containerName); return item, c!=nil && c.UUID==item.ContainerUUID && item.ContainerName == containerName && now.Before(item.ExpiresAt)
 }
 
 func cleanupExpiredWebSSHTicketsLocked(now time.Time) {

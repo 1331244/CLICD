@@ -105,6 +105,11 @@ type VMReadinessCheck struct {
 
 // Container represents an LXC container configuration
 type Container struct {
+	TrafficQuotaRevision          int64                  `json:"traffic_quota_revision,omitempty"`
+	CPUPercent                    int                    `json:"cpu_percent"`
+	SwapMB                        int                    `json:"swap_mb"`
+	SwapConfigured                bool                   `json:"swap_configured,omitempty"`
+	BillingRestrictions           map[string]bool        `json:"billing_restrictions,omitempty"`
 	ID                            int                    `json:"id"`
 	UUID                          string                 `json:"uuid"`
 	Name                          string                 `json:"name"`

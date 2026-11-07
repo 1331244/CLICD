@@ -55,6 +55,7 @@ go mod tidy
 go mod download
 
 BUILD_VERSION="${CLICD_VERSION:-dev}"
+BUILD_REVISION="${CLICD_REVISION:-$(git -C "$SCRIPT_DIR" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}"
 TARGET_GOOS="${CLICD_GOOS:-linux}"
 TARGET_GOARCH="${CLICD_GOARCH:-amd64}"
 
@@ -69,7 +70,7 @@ esac
 
 for arch in $TARGET_GOARCH_LIST; do
     echo "Target: ${TARGET_GOOS}/${arch}"
-    GOOS="$TARGET_GOOS" GOARCH="$arch" CGO_ENABLED=0 go build -ldflags="-s -w -X clicd/internal/version.Version=${BUILD_VERSION}" -o "$BUILD_DIR/clicd-linux-${arch}" .
+    GOOS="$TARGET_GOOS" GOARCH="$arch" CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X clicd/internal/version.Version=${BUILD_VERSION} -X clicd/internal/version.Revision=${BUILD_REVISION}" -o "$BUILD_DIR/clicd-linux-${arch}" .
 done
 
 first_arch="${TARGET_GOARCH_LIST%% *}"

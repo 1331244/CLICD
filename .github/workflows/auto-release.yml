@@ -21,6 +21,8 @@ concurrency:
 jobs:
   check-and-release:
     name: Release after 500 changed code lines
+    # Fork releases are tagged explicitly after the WHMCS compatibility checks.
+    if: github.repository == 'MengMengCode/CLICD'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

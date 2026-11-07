@@ -648,9 +648,11 @@ func (q *TaskQueue) runOperationTask(task *Task) {
 	if err == nil && (task.Type == TaskStart || task.Type == TaskRestart || task.Type == TaskReinstall) {
 		c := config.FindContainer(task.ContainerID)
 		if c != nil {
-			if lxc.IsExpired(*c) {
+			if c.BillingBlocked() {
+				err = fmt.Errorf("Instance is restricted by billing")
+			} else if lxc.IsExpired(*c) {
 				err = fmt.Errorf("容器已到期，不允许此操作")
-			} else if lxc.IsTrafficExceeded(*c) {
+			} else if lxc.IsTrafficExceeded(*c) && !lxc.WHMCSTrafficManaged(*c) {
 				err = fmt.Errorf("容器流量已超限，不允许此操作")
 			}
 		}

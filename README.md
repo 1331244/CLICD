@@ -1,3 +1,5 @@
+> 当前维护分支由 1331244/CLICD 部署，包含 WHMCS 兼容和流量耗尽 2 Mbps 限速。安装、升级及合并上游见 [FORK.md](FORK.md)。
+
 <p align="center">
   <img src="frontend/public/favicon.svg" width="96" alt="CLICD">
 </p>
@@ -35,13 +37,13 @@ CLICD 是一个面向 LXC/KVM 的轻量虚拟化管理面板，集成 Web 控制
 One-click Install / 一键安装：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MengMengCode/CLICD/main/install.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/1331244/CLICD/main/install.sh | sudo sh
 ```
 
 One-click Uninstall / 一键卸载：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MengMengCode/CLICD/main/install.sh | sudo sh -s -- uninstall
+curl -fsSL https://raw.githubusercontent.com/1331244/CLICD/main/install.sh | sudo sh -s -- uninstall
 ```
 
 

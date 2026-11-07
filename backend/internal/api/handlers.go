@@ -422,10 +422,10 @@ func resetTraffic(w http.ResponseWriter, r *http.Request, id int) {
 		jsonResponse(w, http.StatusNotFound, APIResponse{Success: false, Message: "Container not found"})
 		return
 	}
-	c.TrafficUsedRX = 0
-	c.TrafficUsedTX = 0
-	c.TrafficResetDate = time.Now().Format("2006-01")
-	config.SaveConfig()
+	if err := lxcManager.ResetTraffic(id); err != nil {
+		jsonResponse(w, 503, APIResponse{Success: false, Message: err.Error()})
+		return
+	}
 	jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Traffic reset"})
 }
 
@@ -450,6 +450,10 @@ func updateTrafficLimit(w http.ResponseWriter, r *http.Request, id int) {
 	c.TrafficInGB = req.TrafficInGB
 	c.TrafficOutGB = req.TrafficOutGB
 	config.SaveConfig()
+	if err := lxcManager.RefreshWHMCSTrafficQuota(id); err != nil {
+		jsonResponse(w, 503, APIResponse{Success: false, Message: err.Error()})
+		return
+	}
 	jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Traffic limit updated"})
 }
 
@@ -870,6 +874,8 @@ func HandleVersion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, http.StatusOK, APIResponse{Success: true, Data: map[string]string{
-		"version": version.Current(),
+		"version":    version.Current(),
+		"repository": version.Repo,
+		"revision":   version.Revision,
 	}})
 }

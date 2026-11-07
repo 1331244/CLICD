@@ -34,6 +34,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
+		if !api.ValidateWHMCSEpoch(w,r){return}
 		next(w, r)
 	}
 }
@@ -52,7 +53,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/access-policy", corsMiddleware(api.AdminMiddleware(api.HandlePanelAccessPolicy)))
 	mux.HandleFunc("/api/containers", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleContainers))))
 	mux.HandleFunc("/api/containers/list", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleContainerListAlias))))
-	mux.HandleFunc("/api/containers/", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleSingleContainer))))
+	mux.HandleFunc("/api/containers/", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.ConditionalContainerMiddleware(api.HandleSingleContainer)))))
 	mux.HandleFunc("/api/templates", corsMiddleware(api.AuthMiddleware(api.HandleTemplates)))
 	mux.HandleFunc("/api/images", corsMiddleware(api.AdminMiddleware(api.HandleImages)))
 	mux.HandleFunc("/api/images/custom", corsMiddleware(api.AdminMiddleware(api.HandleCustomKVMImages)))
@@ -97,12 +98,13 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/api-keys", corsMiddleware(api.AdminMiddleware(api.HandleApiKeys)))
 	mux.HandleFunc("/api/api-keys/", corsMiddleware(api.AdminMiddleware(api.HandleApiKeyDelete)))
 
-	// Versioned external API routes
+	mux.HandleFunc("/api/v1/whmcs/", corsMiddleware(api.AuthMiddleware(api.HandleWHMCS)))
+ // Versioned external API routes
 	mux.HandleFunc("/api/v1/dashboard", corsMiddleware(api.AuthMiddleware(api.HandleDashboard)))
 	mux.HandleFunc("/api/v1/language", corsMiddleware(api.HandleLanguage))
 	mux.HandleFunc("/api/v1/containers", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleContainers))))
 	mux.HandleFunc("/api/v1/containers/list", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleContainerListAlias))))
-	mux.HandleFunc("/api/v1/containers/", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleSingleContainer))))
+	mux.HandleFunc("/api/v1/containers/", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.ConditionalContainerMiddleware(api.HandleSingleContainer)))))
 	mux.HandleFunc("/api/v1/templates", corsMiddleware(api.AuthMiddleware(api.HandleTemplates)))
 	mux.HandleFunc("/api/v1/images", corsMiddleware(api.AuthMiddleware(api.HandleImages)))
 	mux.HandleFunc("/api/v1/images/custom", corsMiddleware(api.AdminMiddleware(api.HandleCustomKVMImages)))

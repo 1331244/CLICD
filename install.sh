@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-REPO="${CLICD_REPO:-MengMengCode/CLICD}"
+REPO="${CLICD_REPO:-1331244/CLICD}"
 CLICD_INSTALL_VERSION="${CLICD_VERSION:-latest}"
 ACTION="${1:-install}"
 ACTION_CONFIRM="${2:-}"
@@ -1080,6 +1080,7 @@ install_apk() {
         bridge-utils \
         iproute2 \
         iptables \
+        nftables \
         dnsmasq \
         dbus
 
@@ -1120,6 +1121,7 @@ install_apt() {
         uidmap \
         iproute2 \
         iptables \
+        nftables \
         conntrack \
         quota \
         e2fsprogs \
@@ -1176,6 +1178,7 @@ install_dnf() {
         bridge-utils \
         iproute \
         iptables \
+        nftables \
         conntrack-tools \
         shadow-utils \
         quota \
@@ -1220,6 +1223,7 @@ install_yum() {
         bridge-utils \
         iproute \
         iptables \
+        nftables \
         conntrack-tools \
         shadow-utils \
         quota \

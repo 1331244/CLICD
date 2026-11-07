@@ -655,6 +655,9 @@ func loadConfigFromDB() (*ClicdConfig, bool, error) {
 	if cfg.Containers, err = loadContainers(); err != nil {
 		return nil, false, err
 	}
+	if err = loadWHMCSPolicies(cfg.Containers); err != nil {
+		return nil, false, err
+	}
 	if cfg.SubUsers, err = loadSubUsers(); err != nil {
 		return nil, false, err
 	}
@@ -794,6 +797,9 @@ func saveMeta(tx *sql.Tx) error {
 }
 
 func saveContainers(tx *sql.Tx) error {
+	if err := saveWHMCSPolicies(tx); err != nil {
+		return err
+	}
 	for _, c := range AppConfig.Containers {
 		NormalizeContainerResourceAliases(&c)
 		allowedImageIDs := encodeStringSlice(c.AllowedImageIDs)

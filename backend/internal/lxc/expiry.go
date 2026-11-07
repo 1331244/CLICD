@@ -36,6 +36,7 @@ func (m *Manager) StopExpiredContainers(now time.Time) {
 
 // StartExpiryScanner runs a background loop that tracks traffic & stops expired/over-traffic containers every 30 seconds
 func (m *Manager) StartExpiryScanner() {
+	m.AccumulateTraffic()
 	go func() {
 		for {
 			time.Sleep(30 * time.Second)
@@ -49,6 +50,8 @@ func (m *Manager) StartExpiryScanner() {
 
 // StopTrafficExceededContainers stops running containers that have exceeded their monthly traffic limit
 func (m *Manager) StopTrafficExceededContainers(now time.Time) {
+	lastTrafficSnapshotMu.Lock()
+	defer lastTrafficSnapshotMu.Unlock()
 	currentMonth := now.Format("2006-01")
 	saved := false
 	for i := range config.AppConfig.Containers {
@@ -57,6 +60,9 @@ func (m *Manager) StopTrafficExceededContainers(now time.Time) {
 			continue
 		}
 
+		if WHMCSTrafficManaged(*c) {
+			continue
+		}
 		// Reset traffic if new month
 		if c.TrafficResetDate != currentMonth {
 			c.TrafficUsedRX = 0
@@ -97,14 +103,35 @@ func isTrafficExceeded(c config.Container) bool {
 
 // ResetTraffic resets traffic counters for a container
 func (m *Manager) ResetTraffic(id int) error {
+	lastTrafficSnapshotMu.Lock()
+	defer lastTrafficSnapshotMu.Unlock()
 	c := config.FindContainer(id)
 	if c == nil {
 		return fmt.Errorf("container not found: %d", id)
 	}
+	oldRX, oldTX, oldDate, oldRevision := c.TrafficUsedRX, c.TrafficUsedTX, c.TrafficResetDate, c.TrafficQuotaRevision
 	c.TrafficUsedRX = 0
 	c.TrafficUsedTX = 0
 	c.TrafficResetDate = time.Now().Format("2006-01")
-	config.SaveConfig()
+	c.TrafficQuotaRevision++
+	if err := config.SaveConfig(); err != nil {
+		c.TrafficUsedRX = oldRX
+		c.TrafficUsedTX = oldTX
+		c.TrafficResetDate = oldDate
+		c.TrafficQuotaRevision = oldRevision
+		return err
+	}
+	if c.Status == "running" {
+		rx, tx := m.getContainerNetworkBytes(c.LxcName())
+		lastTrafficSnapshot[c.LxcName()] = trafficSample{RXBytes: rx, TXBytes: tx}
+	} else {
+		delete(lastTrafficSnapshot, c.LxcName())
+	}
+	if c.Status == "running" {
+		if err := m.syncWHMCSQuotaLocked(c, "", true); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

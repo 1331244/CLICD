@@ -23,7 +23,6 @@ import (
 var manager = lxc.NewManager()
 
 const (
-	clicdBackupDir              = "/root/clicd-backups"
 	clicdNewBinaryPath          = "/usr/local/bin/clicd.new"
 	libvirtDefaultNetworkMarker = "/var/lib/clicd/kvm/default-network.created"
 )
@@ -846,19 +845,6 @@ func upgradeFromReleaseAsset(assetURL, latest, assetName string) error {
 		return err
 	}
 
-	backupDir := clicdBackupDir
-	if err := os.MkdirAll(backupDir, 0700); err != nil {
-		return err
-	}
-	backupName := fmt.Sprintf("clicd.%s.%s", safeReleaseBackupComponent(latest), time.Now().Format("20060102-150405"))
-	if _, err := os.Stat("/usr/local/bin/clicd"); err == nil {
-		backupPath, err := copyFileToBackup("/usr/local/bin/clicd", backupName, 0755)
-		if err != nil {
-			return fmt.Errorf("备份旧二进制失败: %w", err)
-		}
-		cliPrintf("旧版本已备份: %s\n", backupPath)
-	}
-
 	cliPrintln("正在替换二进制...")
 	if err := stopService("clicd"); err != nil {
 		cliPrintf("停止 Web 服务失败，继续尝试替换: %v\n", err)
@@ -929,21 +915,6 @@ func findFile(root, name string) (string, error) {
 	return found, nil
 }
 
-func copyFileToBackup(src, fileName string, mode os.FileMode) (string, error) {
-	if fileName == "" || strings.Contains(fileName, "/") || strings.Contains(fileName, "\\") || strings.Contains(fileName, "..") {
-		return "", fmt.Errorf("unsafe backup file name: %s", fileName)
-	}
-	dst := filepath.Join(clicdBackupDir, fileName)
-	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
-	if err != nil {
-		return "", err
-	}
-	if err := copyIntoOpenFile(src, out, mode); err != nil {
-		return "", err
-	}
-	return dst, nil
-}
-
 func copyFileToUpgradeTemp(src string, mode os.FileMode) error {
 	out, err := os.OpenFile(clicdNewBinaryPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, mode)
 	if err != nil {
@@ -972,26 +943,6 @@ func copyIntoOpenFile(src string, out *os.File, mode os.FileMode) error {
 		return err
 	}
 	return nil
-}
-
-func safeReleaseBackupComponent(tag string) string {
-	tag = strings.TrimPrefix(strings.TrimSpace(tag), "v")
-	var b strings.Builder
-	for _, r := range tag {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-' {
-			b.WriteRune(r)
-			continue
-		}
-		b.WriteByte('_')
-	}
-	component := strings.Trim(b.String(), "._-")
-	if component == "" {
-		return "unknown"
-	}
-	if len(component) > 64 {
-		return component[:64]
-	}
-	return component
 }
 
 func sameVersion(current, latest string) bool {
