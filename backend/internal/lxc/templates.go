@@ -19,6 +19,7 @@ type Template struct {
 	URL         string `json:"url,omitempty"`
 	SHA256      string `json:"sha256,omitempty"`
 	Custom      bool   `json:"custom,omitempty"`
+	Filename    string `json:"filename,omitempty"`
 }
 
 // GetTemplates returns available LXC image templates (only verified working ones)
@@ -92,6 +93,20 @@ func GetTemplates() []Template {
 			Custom:      true,
 		})
 	}
+	names := config.ImageNameOverrides()
+	filenames := config.ImageCacheFilenames()
+	for index := range templates {
+		if name := names[templates[index].ID]; name != "" {
+			templates[index].Name = name
+		}
+		templates[index].Filename = filenames[templates[index].ID]
+		if templates[index].Filename == "" {
+			templates[index].Filename = "rootfs.tar.xz"
+			if templates[index].Custom {
+				templates[index].Filename = "rootfs.tar"
+			}
+		}
+	}
 	return templates
 }
 
@@ -131,4 +146,3 @@ func GetTemplateMinDiskGB(templateID string) float64 {
 		return 0.5
 	}
 }
-

@@ -816,6 +816,8 @@ type ClicdConfig struct {
 	EnabledImages        []string               `json:"enabled_images"`
 	CustomKVMImages      []CustomKVMImage       `json:"custom_kvm_images"`
 	CustomLXCImages      []CustomLXCImage       `json:"custom_lxc_images"`
+	NameOverrides        map[string]string      `json:"image_name_overrides,omitempty"`
+	ImageFiles           map[string]string      `json:"image_cache_filenames,omitempty"`
 	Snapshots            []Snapshot             `json:"snapshots"`
 	PublicIPv4Pool       []PublicIPv4Assignment `json:"public_ipv4_pool"`
 	PublicIPv6Prefixes   []PublicIPv6Prefix     `json:"public_ipv6_prefixes"`
@@ -1609,9 +1611,17 @@ func RemoveCustomLXCImage(id string) (bool, error) {
 		return false, nil
 	}
 	previous := AppConfig.CustomLXCImages
+	previousNames := AppConfig.NameOverrides
+	previousFiles := AppConfig.ImageFiles
 	AppConfig.CustomLXCImages = filtered
+	AppConfig.NameOverrides = copyImageNameOverrides(previousNames)
+	AppConfig.ImageFiles = copyImageNameOverrides(previousFiles)
+	delete(AppConfig.NameOverrides, id)
+	delete(AppConfig.ImageFiles, id)
 	if err := SaveConfig(); err != nil {
 		AppConfig.CustomLXCImages = previous
+		AppConfig.NameOverrides = previousNames
+		AppConfig.ImageFiles = previousFiles
 		return false, err
 	}
 	return true, nil

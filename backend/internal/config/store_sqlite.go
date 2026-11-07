@@ -651,6 +651,12 @@ func loadConfigFromDB() (*ClicdConfig, bool, error) {
 	if raw := strings.TrimSpace(meta["custom_lxc_images"]); raw != "" {
 		_ = json.Unmarshal([]byte(raw), &cfg.CustomLXCImages)
 	}
+	if raw := strings.TrimSpace(meta["image_name_overrides"]); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &cfg.NameOverrides)
+	}
+	if raw := strings.TrimSpace(meta["image_cache_filenames"]); raw != "" {
+		_ = json.Unmarshal([]byte(raw), &cfg.ImageFiles)
+	}
 
 	if cfg.Containers, err = loadContainers(); err != nil {
 		return nil, false, err
@@ -759,6 +765,8 @@ func saveMeta(tx *sql.Tx) error {
 	storagePoolsJSON, _ := json.Marshal(AppConfig.StoragePools)
 	customKVMImagesJSON, _ := json.Marshal(AppConfig.CustomKVMImages)
 	customLXCImagesJSON, _ := json.Marshal(AppConfig.CustomLXCImages)
+	imageNameOverridesJSON, _ := json.Marshal(AppConfig.NameOverrides)
+	imageCacheFilenamesJSON, _ := json.Marshal(AppConfig.ImageFiles)
 	values := map[string]string{
 		"admin_user":             AppConfig.AdminUser,
 		"admin_pass_hash":        AppConfig.AdminPassHash,
@@ -785,6 +793,8 @@ func saveMeta(tx *sql.Tx) error {
 		"storage_pools":          string(storagePoolsJSON),
 		"custom_kvm_images":      string(customKVMImagesJSON),
 		"custom_lxc_images":      string(customLXCImagesJSON),
+		"image_name_overrides":   string(imageNameOverridesJSON),
+		"image_cache_filenames":  string(imageCacheFilenamesJSON),
 		"schema_version":         "1",
 		"updated_at":             time.Now().Format("2006-01-02 15:04:05"),
 	}

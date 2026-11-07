@@ -31,6 +31,8 @@ func TestImageManagementRoutesRequireAdministratorAndOperationScope(t *testing.T
 		{http.MethodPost, "/api/v1/images/cancel"},
 		{http.MethodDelete, "/api/v1/images/delete"},
 		{http.MethodPut, "/api/v1/images/toggle"},
+		{http.MethodPut, "/api/v1/images/rename"},
+		{http.MethodPut, "/api/images/rename"},
 	} {
 		for _, access := range []struct {
 			name, token string
@@ -66,6 +68,42 @@ func TestImageManagementRoutesRequireAdministratorAndOperationScope(t *testing.T
 	mux.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("read-only image access status=%d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestImageRenameRequiresToggleScope(t *testing.T) {
+	previous := config.AppConfig
+	t.Cleanup(func() { config.AppConfig = previous })
+	config.AppConfig = &config.ClicdConfig{
+		JWTSecret: "image-rename-permission-test",
+		ApiKeys: []config.ApiKeyConfig{{
+			ID:      "rename-images",
+			KeyHash: "636c6963645f736b5f73656375726974795f626f756e646172795f7465737400",
+		}},
+	}
+	mux := http.NewServeMux()
+	setupRoutes(mux)
+	for _, path := range []string{"/api/images/rename", "/api/v1/images/rename"} {
+		for _, access := range []struct {
+			name   string
+			scopes []string
+			want   int
+		}{
+			{"download does not permit rename", []string{"admin:access", "image:download"}, http.StatusForbidden},
+			{"delete does not permit rename", []string{"admin:access", "image:delete"}, http.StatusForbidden},
+			{"toggle permits rename", []string{"admin:access", "image:toggle"}, http.StatusBadRequest},
+		} {
+			t.Run(path+"/"+access.name, func(t *testing.T) {
+				config.AppConfig.ApiKeys[0].Scopes = access.scopes
+				req := httptest.NewRequest(http.MethodPut, path, strings.NewReader("{"))
+				req.Header.Set("X-API-Key", "clicd_sk_security_boundary_test")
+				rec := httptest.NewRecorder()
+				mux.ServeHTTP(rec, req)
+				if rec.Code != access.want {
+					t.Fatalf("status=%d, want %d: %s", rec.Code, access.want, rec.Body.String())
+				}
+			})
+		}
 	}
 }
 

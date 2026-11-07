@@ -26,6 +26,7 @@ import (
 type ImageInfo struct {
 	ID              string  `json:"id"`
 	Name            string  `json:"name"`
+	Filename        string  `json:"filename,omitempty"`
 	Type            string  `json:"type"`
 	Distro          string  `json:"distro"`
 	Release         string  `json:"release"`
@@ -57,6 +58,7 @@ var sha256Pattern = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 var imageDownloadsMu sync.Mutex
 var imageDownloads = map[string]*imageDownloadStatus{}
 var lxcImageCacheMu sync.Mutex
+var imageMetadataMu sync.Mutex
 
 type lxcImageDownloadTask struct {
 	template lxc.Template
@@ -284,6 +286,10 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 			finishImageDownload(tmpl.ID, err)
 			return
 		}
+		if err := lxc.ApplyImageArchiveName(tmpl); err != nil {
+			finishImageDownload(tmpl.ID, err)
+			return
+		}
 		ensureImageEnabled(tmpl.ID)
 		finishImageDownload(tmpl.ID, nil)
 		return
@@ -311,6 +317,10 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 			return
 		}
 		err = fmt.Errorf("Download failed: %v, output: %s", err, string(output))
+		finishImageDownload(tmpl.ID, err)
+		return
+	}
+	if err := lxc.ApplyImageArchiveName(tmpl); err != nil {
 		finishImageDownload(tmpl.ID, err)
 		return
 	}
@@ -446,6 +456,7 @@ func HandleImages(w http.ResponseWriter, r *http.Request) {
 		images = append(images, ImageInfo{
 			ID:              t.ID,
 			Name:            t.Name,
+			Filename:        lxc.CachedImageFilename(t),
 			Type:            config.VirtualizationLXC,
 			Distro:          t.Distro,
 			Release:         t.Release,
@@ -505,6 +516,8 @@ func HandleImages(w http.ResponseWriter, r *http.Request) {
 
 // HandleCustomKVMImages creates or removes administrator-defined LXC/KVM image sources.
 func HandleCustomKVMImages(w http.ResponseWriter, r *http.Request) {
+	imageMetadataMu.Lock()
+	defer imageMetadataMu.Unlock()
 	switch r.Method {
 	case http.MethodPost:
 		if !requireScope(w, r, "image:download") {
@@ -761,6 +774,8 @@ func handleCustomKVMImageDelete(w http.ResponseWriter, r *http.Request) {
 
 // HandleImageDownload starts a template image download in the background.
 func HandleImageDownload(w http.ResponseWriter, r *http.Request) {
+	imageMetadataMu.Lock()
+	defer imageMetadataMu.Unlock()
 	if r.Method != http.MethodPost {
 		jsonResponse(w, http.StatusMethodNotAllowed, APIResponse{Success: false, Message: "Method not allowed"})
 		return
@@ -847,6 +862,10 @@ func HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 
 	// Already downloaded? Just enable if needed.
 	if downloaded, _ := lxcTemplateDownloadedInfo(*tmpl); downloaded {
+		if err := lxc.ApplyImageArchiveName(*tmpl); err != nil {
+			jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: err.Error()})
+			return
+		}
 		ensureImageEnabled(tmpl.ID)
 		clearImageDownload(tmpl.ID)
 		jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Already downloaded"})
@@ -1071,6 +1090,8 @@ func HandleImageCancel(w http.ResponseWriter, r *http.Request) {
 
 // HandleImageDelete deletes a cached template image from disk.
 func HandleImageDelete(w http.ResponseWriter, r *http.Request) {
+	imageMetadataMu.Lock()
+	defer imageMetadataMu.Unlock()
 	if r.Method != http.MethodDelete {
 		jsonResponse(w, http.StatusMethodNotAllowed, APIResponse{Success: false, Message: "Method not allowed"})
 		return

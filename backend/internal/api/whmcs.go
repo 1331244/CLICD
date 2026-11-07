@@ -101,7 +101,7 @@ func HandleWHMCS(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/whmcs/")
 	if path == "capabilities" && r.Method == "GET" {
-		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"version": "1", "virtualization": "lxc", "billing_reasons": true, "cpu_percent": true, "swap_mb": true, "ssh_key_offline": true, "conditional_mappings": true, "uuid_tickets": true, "paid_traffic_reset": true, "traffic_quota_2mbps": lxc.WHMCSTrafficQuotaAvailable(), "instance_epoch": whmcsInstanceEpoch}})
+		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"version": "1", "virtualization": "lxc", "billing_reasons": true, "cpu_percent": true, "swap_mb": true, "ssh_key_offline": true, "conditional_mappings": true, "uuid_tickets": true, "paid_traffic_reset": true, "traffic_quota_2mbps": lxc.WHMCSTrafficQuotaAvailable(), "image_rename": true, "instance_epoch": whmcsInstanceEpoch}})
 		return
 	}
 	parts := strings.Split(path, "/")

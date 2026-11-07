@@ -619,6 +619,10 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 			return fmt.Errorf("lxc-create failed: %v, output: %s", err, string(output))
 		}
 	}
+	if err := ApplyImageArchiveName(*tmpl); err != nil {
+		_ = m.cleanupContainerStorage(lxcName)
+		return fmt.Errorf("failed to preserve template archive name: %w", err)
+	}
 
 	cfg.ReportProgress("storage", "复制容器数据到存储磁盘")
 	storagePoolID, storagePath, err := m.moveContainerToStoragePool(lxcName, cfg.StoragePoolID)
@@ -3625,6 +3629,9 @@ func (m *Manager) replaceRootfsFromTemplate(lxcName string, tmpl *Template) erro
 		if err != nil {
 			return fmt.Errorf("failed to download replacement rootfs: %v, output: %s", err, string(output))
 		}
+	}
+	if err := ApplyImageArchiveName(*tmpl); err != nil {
+		return fmt.Errorf("failed to preserve template archive name: %w", err)
 	}
 
 	if !rootfsHasInit(tmpRootfs) {

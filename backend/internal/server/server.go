@@ -34,7 +34,9 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if !api.ValidateWHMCSEpoch(w,r){return}
+		if !api.ValidateWHMCSEpoch(w, r) {
+			return
+		}
 		next(w, r)
 	}
 }
@@ -67,6 +69,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/images/cancel", corsMiddleware(api.AdminMiddleware(api.HandleImageCancel)))
 	mux.HandleFunc("/api/images/delete", corsMiddleware(api.AdminMiddleware(api.HandleImageDelete)))
 	mux.HandleFunc("/api/images/toggle", corsMiddleware(api.AdminMiddleware(api.HandleImageToggle)))
+	mux.HandleFunc("/api/images/rename", corsMiddleware(api.AdminMiddleware(api.HandleImageRename)))
 	mux.HandleFunc("/api/images/enabled", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleEnabledImages))))
 	mux.HandleFunc("/api/dashboard", corsMiddleware(api.AdminMiddleware(api.HandleDashboard)))
 	mux.HandleFunc("/api/host-info", corsMiddleware(api.AdminMiddleware(api.HandleHostInfo)))
@@ -99,7 +102,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/api-keys/", corsMiddleware(api.AdminMiddleware(api.HandleApiKeyDelete)))
 
 	mux.HandleFunc("/api/v1/whmcs/", corsMiddleware(api.AuthMiddleware(api.HandleWHMCS)))
- // Versioned external API routes
+	// Versioned external API routes
 	mux.HandleFunc("/api/v1/dashboard", corsMiddleware(api.AuthMiddleware(api.HandleDashboard)))
 	mux.HandleFunc("/api/v1/language", corsMiddleware(api.HandleLanguage))
 	mux.HandleFunc("/api/v1/containers", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleContainers))))
@@ -117,6 +120,7 @@ func setupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/images/cancel", corsMiddleware(api.AdminMiddleware(api.HandleImageCancel)))
 	mux.HandleFunc("/api/v1/images/delete", corsMiddleware(api.AdminMiddleware(api.HandleImageDelete)))
 	mux.HandleFunc("/api/v1/images/toggle", corsMiddleware(api.AdminMiddleware(api.HandleImageToggle)))
+	mux.HandleFunc("/api/v1/images/rename", corsMiddleware(api.AdminMiddleware(api.HandleImageRename)))
 	mux.HandleFunc("/api/v1/images/enabled", corsMiddleware(api.AuthMiddleware(api.SubUserMiddleware(api.HandleEnabledImages))))
 	mux.HandleFunc("/api/v1/host-info", corsMiddleware(api.AuthMiddleware(api.HandleHostInfo)))
 	mux.HandleFunc("/api/v1/host-history", corsMiddleware(api.AuthMiddleware(api.HandleHostHistory)))
