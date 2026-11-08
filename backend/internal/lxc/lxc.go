@@ -229,50 +229,54 @@ func NewManager() *Manager {
 
 // ContainerConfig defines container creation parameters
 type ContainerConfig struct {
-	Name                 string                     `json:"name"`
-	Virtualization       string                     `json:"virtualization,omitempty"`
-	TemplateID           string                     `json:"template_id"`
-	StoragePoolID        string                     `json:"storage_pool_id,omitempty"`
-	VCPU                 float64                    `json:"vcpu"`
-	CPUPercent           int                        `json:"cpu_percent"`
-	RAMMB                int                        `json:"ram_mb"`
-	DiskGB               float64                    `json:"disk_gb"`
-	NetworkBWMbps        int                        `json:"network_bw_mbps"`
-	NetworkDownMbps      int                        `json:"network_down_mbps"`
-	NetworkUpMbps        int                        `json:"network_up_mbps"`
-	MonthlyTrafficGB     int                        `json:"monthly_traffic_gb"`
-	TrafficMode          string                     `json:"traffic_mode"`   // "total" or "in_out"
-	TrafficInGB          int                        `json:"traffic_in_gb"`  // 0=unlimited
-	TrafficOutGB         int                        `json:"traffic_out_gb"` // 0=unlimited
-	IOSpeedMBps          int                        `json:"io_speed_mbps"`
-	IOReadMBps           int                        `json:"io_read_mbps"`
-	IOWriteMBps          int                        `json:"io_write_mbps"`
-	ExtraPorts           []int                      `json:"extra_ports"`
-	NATPortMappings      []config.PortMapping       `json:"nat_port_mappings,omitempty"`
-	ManagementPort       int                        `json:"management_port,omitempty"`
-	PortMappingCount     int                        `json:"port_mapping_count"`
-	AssignNAT            *bool                      `json:"assign_nat,omitempty"`
-	LANIPv4Mode          string                     `json:"lan_ipv4_mode,omitempty"`
-	LANInterface         string                     `json:"lan_interface,omitempty"`
-	LANIPv4Address       string                     `json:"lan_ipv4_address,omitempty"`
-	LANIPv4PrefixLen     int                        `json:"lan_ipv4_prefix_len,omitempty"`
-	LANIPv4Gateway       string                     `json:"lan_ipv4_gateway,omitempty"`
-	SnapshotLimit        int                        `json:"snapshot_limit"`
-	AllowedImageIDs      []string                   `json:"allowed_image_ids,omitempty"`
-	ImageLimitConfigured bool                       `json:"image_limit_configured,omitempty"`
-	AssignIPv4           bool                       `json:"assign_ipv4"`
-	IPv4Count            int                        `json:"ipv4_count,omitempty"`
-	PublicIPv4s          []string                   `json:"public_ipv4s,omitempty"`
-	AssignIPv6           bool                       `json:"assign_ipv6"`
-	IPv6Count            int                        `json:"ipv6_count,omitempty"`
-	IPv6Addresses        []string                   `json:"ipv6_addresses,omitempty"`
-	IPv6PortMappingCount int                        `json:"ipv6_port_mapping_count,omitempty"`
-	IPv6NATSyncIPv4      *bool                      `json:"ipv6_nat_sync_ipv4,omitempty"`
-	SSHAuthMode          string                     `json:"ssh_auth_mode,omitempty"`
-	SSHPassword          string                     `json:"ssh_password,omitempty"`
-	SSHPublicKey         string                     `json:"ssh_public_key,omitempty"`
-	ExpiresAt            string                     `json:"expires_at"`
-	Progress             func(stage, detail string) `json:"-"`
+	Name                   string                     `json:"name"`
+	Virtualization         string                     `json:"virtualization,omitempty"`
+	TemplateID             string                     `json:"template_id"`
+	StoragePoolID          string                     `json:"storage_pool_id,omitempty"`
+	VCPU                   float64                    `json:"vcpu"`
+	CPUPercent             int                        `json:"cpu_percent"`
+	RAMMB                  int                        `json:"ram_mb"`
+	DiskGB                 float64                    `json:"disk_gb"`
+	NetworkBWMbps          int                        `json:"network_bw_mbps"`
+	NetworkDownMbps        int                        `json:"network_down_mbps"`
+	NetworkUpMbps          int                        `json:"network_up_mbps"`
+	MonthlyTrafficGB       int                        `json:"monthly_traffic_gb"`
+	TrafficMode            string                     `json:"traffic_mode"`   // "total" or "in_out"
+	TrafficInGB            int                        `json:"traffic_in_gb"`  // 0=unlimited
+	TrafficOutGB           int                        `json:"traffic_out_gb"` // 0=unlimited
+	IOSpeedMBps            int                        `json:"io_speed_mbps"`
+	IOReadMBps             int                        `json:"io_read_mbps"`
+	IOWriteMBps            int                        `json:"io_write_mbps"`
+	ExtraPorts             []int                      `json:"extra_ports"`
+	NATPortMappings        []config.PortMapping       `json:"nat_port_mappings,omitempty"`
+	ManagementPort         int                        `json:"management_port,omitempty"`
+	PortMappingCount       int                        `json:"port_mapping_count"`
+	AutoPortMappings       *bool                      `json:"auto_port_mappings,omitempty"`
+	FixedPortAllocation    bool                       `json:"fixed_port_allocation,omitempty"`
+	NATPortAllocations     []int                      `json:"nat_port_allocations,omitempty"`
+	IPv6NATPortAllocations []int                      `json:"ipv6_nat_port_allocations,omitempty"`
+	AssignNAT              *bool                      `json:"assign_nat,omitempty"`
+	LANIPv4Mode            string                     `json:"lan_ipv4_mode,omitempty"`
+	LANInterface           string                     `json:"lan_interface,omitempty"`
+	LANIPv4Address         string                     `json:"lan_ipv4_address,omitempty"`
+	LANIPv4PrefixLen       int                        `json:"lan_ipv4_prefix_len,omitempty"`
+	LANIPv4Gateway         string                     `json:"lan_ipv4_gateway,omitempty"`
+	SnapshotLimit          int                        `json:"snapshot_limit"`
+	AllowedImageIDs        []string                   `json:"allowed_image_ids,omitempty"`
+	ImageLimitConfigured   bool                       `json:"image_limit_configured,omitempty"`
+	AssignIPv4             bool                       `json:"assign_ipv4"`
+	IPv4Count              int                        `json:"ipv4_count,omitempty"`
+	PublicIPv4s            []string                   `json:"public_ipv4s,omitempty"`
+	AssignIPv6             bool                       `json:"assign_ipv6"`
+	IPv6Count              int                        `json:"ipv6_count,omitempty"`
+	IPv6Addresses          []string                   `json:"ipv6_addresses,omitempty"`
+	IPv6PortMappingCount   int                        `json:"ipv6_port_mapping_count,omitempty"`
+	IPv6NATSyncIPv4        *bool                      `json:"ipv6_nat_sync_ipv4,omitempty"`
+	SSHAuthMode            string                     `json:"ssh_auth_mode,omitempty"`
+	SSHPassword            string                     `json:"ssh_password,omitempty"`
+	SSHPublicKey           string                     `json:"ssh_public_key,omitempty"`
+	ExpiresAt              string                     `json:"expires_at"`
+	Progress               func(stage, detail string) `json:"-"`
 }
 
 // ReportProgress reports a best-effort creation phase to the task queue.
@@ -411,9 +415,30 @@ func (cfg ContainerConfig) WantsNAT() bool {
 	return cfg.AssignNAT == nil || *cfg.AssignNAT
 }
 
+// AutomaticallyMapPorts preserves the native panel's default while allowing
+// billing integrations to leave the entire port quota for the customer.
+func (cfg ContainerConfig) AutomaticallyMapPorts() bool {
+	return cfg.AutoPortMappings == nil || *cfg.AutoPortMappings
+}
+
 func (cfg *ContainerConfig) NormalizeCreateNATMappings() error {
 	if cfg == nil {
 		return nil
+	}
+	if cfg.FixedPortAllocation {
+		if cfg.AutomaticallyMapPorts() {
+			return fmt.Errorf("fixed port allocation requires auto_port_mappings=false")
+		}
+		if cfg.ManagementPort != 0 || len(cfg.NATPortMappings) > 0 || len(cfg.ExtraPorts) > 0 {
+			return fmt.Errorf("fixed port allocation cannot include initial NAT mappings")
+		}
+		for _, ports := range [][]int{cfg.NATPortAllocations, cfg.IPv6NATPortAllocations} {
+			for _, port := range ports {
+				if !config.NATPortInRange(port) {
+					return fmt.Errorf("fixed create port allocations must be within the configured NAT range")
+				}
+			}
+		}
 	}
 	if cfg.IPv6PortMappingCount < 0 || cfg.IPv6PortMappingCount > 64 {
 		return fmt.Errorf("IPv6 port mapping quota must be between 0 and 64")
@@ -423,6 +448,15 @@ func (cfg *ContainerConfig) NormalizeCreateNATMappings() error {
 		cfg.NATPortMappings = nil
 		cfg.ManagementPort = 0
 		cfg.PortMappingCount = 0
+		return nil
+	}
+	if !cfg.AutomaticallyMapPorts() {
+		if cfg.ManagementPort != 0 || len(cfg.NATPortMappings) > 0 || len(cfg.ExtraPorts) > 0 {
+			return fmt.Errorf("manual port allocation cannot include initial NAT mappings or management_port")
+		}
+		if cfg.PortMappingCount < 1 || cfg.PortMappingCount > 64 {
+			return fmt.Errorf("manual NAT port mapping quota must be between 1 and 64")
+		}
 		return nil
 	}
 	if cfg.ManagementPort < 0 || cfg.ManagementPort > 65535 {
@@ -571,6 +605,9 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 	}
 	sshPort := 0
 	releaseNATReservation := func() {}
+	if err := EnsureFixedCreatePortPlan(&cfg); err != nil {
+		return err
+	}
 	sshPort, releaseNATReservation, err = ReserveCreateNATPorts(cfg)
 	if err != nil {
 		return err
@@ -676,7 +713,7 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 	sshPassword := sshAccess.Password
 
 	portMappings := []config.PortMapping{}
-	if cfg.WantsNAT() {
+	if cfg.WantsNAT() && cfg.AutomaticallyMapPorts() {
 		// Setup default port mappings (SSH only)
 		portMappings = SetupDefaultPortMappings(sshPort)
 		// NAT4 port mappings should bind to the host IP, not the container's independent public IPv4.
@@ -698,50 +735,53 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 	trafficResetDate := now[:7] // YYYY-MM for monthly tracking
 
 	container := config.Container{
-		ID:                   id,
-		UUID:                 config.NewContainerUUID(),
-		Name:                 cfg.Name,
-		Virtualization:       config.VirtualizationLXC,
-		LXCName:              lxcName,
-		StoragePoolID:        storagePoolID,
-		StoragePath:          storagePath,
-		Template:             cfg.TemplateID,
-		VCPU:                 cfg.VCPU,
-		RAMMB:                cfg.RAMMB,
-		DiskGB:               cfg.DiskGB,
-		NetworkBWMbps:        cfg.NetworkBWMbps,
-		NetworkDownMbps:      cfg.NetworkDownMbps,
-		NetworkUpMbps:        cfg.NetworkUpMbps,
-		MonthlyTrafficGB:     cfg.MonthlyTrafficGB,
-		TrafficMode:          trafficMode,
-		TrafficInGB:          cfg.TrafficInGB,
-		TrafficOutGB:         cfg.TrafficOutGB,
-		TrafficResetDate:     trafficResetDate,
-		IOSpeedMBps:          cfg.IOSpeedMBps,
-		IOReadMBps:           cfg.IOReadMBps,
-		IOWriteMBps:          cfg.IOWriteMBps,
-		Status:               "stopped",
-		IP:                   "",
-		LANIPv4Mode:          normalizedLANIPv4Mode(cfg.LANIPv4Mode),
-		LANInterface:         strings.TrimSpace(cfg.LANInterface),
-		LANIPv4Address:       strings.TrimSpace(cfg.LANIPv4Address),
-		LANIPv4PrefixLen:     cfg.LANIPv4PrefixLen,
-		LANIPv4Gateway:       strings.TrimSpace(cfg.LANIPv4Gateway),
-		MACAddress:           readLXCConfigValue(lxcName, "lxc.net.0.hwaddr"),
-		PublicIPv4s:          publicIPv4s,
-		IPv6Addresses:        ipv6Assignments,
-		IPv6PortMappingLimit: cfg.IPv6PortMappingCount,
-		IPv6NATSyncIPv4:      cfg.IPv6NATSyncIPv4,
-		VNCPort:              0,
-		SSHPort:              sshPort,
-		SSHPassword:          sshPassword,
-		PortMappings:         portMappings,
-		PortMappingLimit:     cfg.PortMappingCount,
-		AllowedImageIDs:      append([]string(nil), cfg.AllowedImageIDs...),
-		ImageLimitConfigured: cfg.ImageLimitConfigured,
-		SnapshotLimit:        config.NormalizeSnapshotLimit(cfg.SnapshotLimit),
-		CreatedAt:            now,
-		ExpiresAt:            cfg.ExpiresAt,
+		ID:                     id,
+		UUID:                   config.NewContainerUUID(),
+		Name:                   cfg.Name,
+		Virtualization:         config.VirtualizationLXC,
+		LXCName:                lxcName,
+		StoragePoolID:          storagePoolID,
+		StoragePath:            storagePath,
+		Template:               cfg.TemplateID,
+		VCPU:                   cfg.VCPU,
+		RAMMB:                  cfg.RAMMB,
+		DiskGB:                 cfg.DiskGB,
+		NetworkBWMbps:          cfg.NetworkBWMbps,
+		NetworkDownMbps:        cfg.NetworkDownMbps,
+		NetworkUpMbps:          cfg.NetworkUpMbps,
+		MonthlyTrafficGB:       cfg.MonthlyTrafficGB,
+		TrafficMode:            trafficMode,
+		TrafficInGB:            cfg.TrafficInGB,
+		TrafficOutGB:           cfg.TrafficOutGB,
+		TrafficResetDate:       trafficResetDate,
+		IOSpeedMBps:            cfg.IOSpeedMBps,
+		IOReadMBps:             cfg.IOReadMBps,
+		IOWriteMBps:            cfg.IOWriteMBps,
+		Status:                 "stopped",
+		IP:                     "",
+		LANIPv4Mode:            normalizedLANIPv4Mode(cfg.LANIPv4Mode),
+		LANInterface:           strings.TrimSpace(cfg.LANInterface),
+		LANIPv4Address:         strings.TrimSpace(cfg.LANIPv4Address),
+		LANIPv4PrefixLen:       cfg.LANIPv4PrefixLen,
+		LANIPv4Gateway:         strings.TrimSpace(cfg.LANIPv4Gateway),
+		MACAddress:             readLXCConfigValue(lxcName, "lxc.net.0.hwaddr"),
+		PublicIPv4s:            publicIPv4s,
+		IPv6Addresses:          ipv6Assignments,
+		IPv6PortMappingLimit:   cfg.IPv6PortMappingCount,
+		IPv6NATSyncIPv4:        cfg.IPv6NATSyncIPv4,
+		VNCPort:                0,
+		SSHPort:                sshPort,
+		SSHPassword:            sshPassword,
+		PortMappings:           portMappings,
+		PortMappingLimit:       cfg.PortMappingCount,
+		FixedPortAllocation:    cfg.FixedPortAllocation,
+		NATPortAllocations:     append([]int(nil), cfg.NATPortAllocations...),
+		IPv6NATPortAllocations: append([]int(nil), cfg.IPv6NATPortAllocations...),
+		AllowedImageIDs:        append([]string(nil), cfg.AllowedImageIDs...),
+		ImageLimitConfigured:   cfg.ImageLimitConfigured,
+		SnapshotLimit:          config.NormalizeSnapshotLimit(cfg.SnapshotLimit),
+		CreatedAt:              now,
+		ExpiresAt:              cfg.ExpiresAt,
 	}
 	container.NormalizeNetworkAssignments()
 	if err := prepareIPv6NATAddress(&container); err != nil {
@@ -755,7 +795,14 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 		}
 	}
 	cfg.ReportProgress("metadata", "保存容器配置")
-	config.AddContainer(container)
+	if cfg.FixedPortAllocation {
+		if err := config.AddContainerPersisted(container); err != nil {
+			_ = m.cleanupContainerStorage(lxcName)
+			return err
+		}
+	} else {
+		config.AddContainer(container)
+	}
 
 	// Pre-configure network and SSH in the rootfs before first boot.
 	rootfsPath := filepath.Join(m.LxcPath, lxcName, "rootfs")

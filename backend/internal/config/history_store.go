@@ -42,6 +42,9 @@ func saveTaskQueueCompatibility(tasks []SavedTask) error {
 	if err := saveTasksDB(tx); err != nil {
 		return err
 	}
+	if err := saveFixedTaskPortAllocations(tx); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 

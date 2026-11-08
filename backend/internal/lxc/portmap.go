@@ -416,6 +416,9 @@ func (m *Manager) AddPortMapping(id int, pm config.PortMapping) ([]config.PortMa
 	if err != nil {
 		return nil, err
 	}
+	if err := validatePortMappingCreateReservation(c, normalized); err != nil {
+		return nil, err
+	}
 	previous := *c
 	candidate := *c
 	candidate.PortMappings = append(append([]config.PortMapping(nil), c.PortMappings...), normalized)
@@ -445,6 +448,9 @@ func (m *Manager) UpdatePortMapping(id int, index int, pm config.PortMapping) ([
 	existing := c.PortMappings[index]
 	normalized, err := normalizePortMapping(c, index, pm)
 	if err != nil {
+		return nil, err
+	}
+	if err := validatePortMappingCreateReservation(c, normalized); err != nil {
 		return nil, err
 	}
 	if strings.EqualFold(existing.Description, "SSH") {
@@ -483,6 +489,15 @@ func (m *Manager) DeletePortMapping(id int, index int) ([]config.PortMapping, er
 	}
 	previous := *c
 	c.PortMappings = append(append([]config.PortMapping(nil), c.PortMappings[:index]...), c.PortMappings[index+1:]...)
+	if c.FixedPortAllocation && removed.HostIP != "" {
+		createNATReservationMu.Lock()
+		err := planFixedPortPoolsLocked(c)
+		createNATReservationMu.Unlock()
+		if err != nil {
+			restorePortMappingState(c, &previous)
+			return nil, err
+		}
+	}
 	if err := persistAndReloadMappings(m, c, &previous); err != nil {
 		return nil, err
 	}
@@ -508,7 +523,19 @@ func persistAndReloadMappings(m *Manager, c, previous *config.Container) error {
 	}
 	// Preserve the historical best-effort save behavior. A failed kernel apply is
 	// handled above before this point, so invalid mappings cannot be persisted.
-	_ = config.SaveConfig()
+	if c.FixedPortAllocation {
+		if err := saveFixedPortConfig(); err != nil {
+			restorePortMappingState(c, previous)
+			if running {
+				if rollbackErr := m.ApplyPortMappings(c.ID); rollbackErr != nil {
+					return errors.Join(err, rollbackErr)
+				}
+			}
+			return err
+		}
+	} else {
+		_ = config.SaveConfig()
+	}
 	return nil
 }
 
@@ -518,16 +545,28 @@ func restorePortMappingState(c, previous *config.Container) {
 	}
 	c.PortMappings = append([]config.PortMapping(nil), previous.PortMappings...)
 	c.SSHPort = previous.SSHPort
+	c.NATPortAllocations = previous.NATPortAllocations
+	c.IPv6NATPortAllocations = previous.IPv6NATPortAllocations
 }
 
 func syncContainerSSHPort(c *config.Container) {
 	if c == nil {
 		return
 	}
+	c.SSHPort = 0
 	for _, mapping := range c.PortMappings {
-		if strings.EqualFold(mapping.Description, "SSH") {
+		if (mapping.Protocol == "" || strings.EqualFold(mapping.Protocol, "tcp")) && mapping.ContainerPort == 22 {
 			c.SSHPort = mapping.HostPort
 			return
+		}
+	}
+	// The legacy field also carries the RDP endpoint for Windows KVM guests.
+	if c.IsKVM() {
+		for _, mapping := range c.PortMappings {
+			if (mapping.Protocol == "" || strings.EqualFold(mapping.Protocol, "tcp")) && mapping.ContainerPort == 3389 {
+				c.SSHPort = mapping.HostPort
+				return
+			}
 		}
 	}
 }
@@ -617,7 +656,10 @@ func normalizePortMapping(c *config.Container, skipIndex int, pm config.PortMapp
 	if pm.HostPort <= 0 {
 		pm.HostPort = pm.ContainerPort
 	}
-	if pm.HostIP == "" && !config.NATPortInRange(pm.HostPort) {
+	if err := validateFixedMapping(c, pm, false); err != nil {
+		return pm, err
+	}
+	if pm.HostIP == "" && !config.NATPortInRange(pm.HostPort) && !(c.FixedPortAllocation && containsPort(c.NATPortAllocations, pm.HostPort)) {
 		start, end := config.NATPortRange()
 		return pm, fmt.Errorf("host port must be within configured NAT4 range %d-%d", start, end)
 	}
@@ -650,6 +692,9 @@ func normalizePortMapping(c *config.Container, skipIndex int, pm config.PortMapp
 func SetupCreatePortMappings(c *config.Container, cfg ContainerConfig) ([]config.PortMapping, error) {
 	if c == nil {
 		return nil, fmt.Errorf("container is required")
+	}
+	if !cfg.AutomaticallyMapPorts() {
+		return []config.PortMapping{}, nil
 	}
 	requested := append([]config.PortMapping(nil), cfg.NATPortMappings...)
 	if len(requested) == 0 && cfg.PortMappingCount > 1 {
@@ -700,6 +745,19 @@ func ReserveCreateNATPorts(cfg ContainerConfig) (int, func(), error) {
 		}
 		return activateCreateNATReservationLocked(cfg.ManagementPort, queued, owner, createUsesIPv6PortSynchronization(cfg))
 	}
+	if cfg.FixedPortAllocation {
+		candidate := fixedCreateCandidate(cfg)
+		if err := planFixedPortPoolsLocked(&candidate); err != nil {
+			return 0, nil, err
+		}
+		if !samePortNumbers(candidate.NATPortAllocations, cfg.NATPortAllocations) || !samePortNumbers(candidate.IPv6NATPortAllocations, cfg.IPv6NATPortAllocations) {
+			return 0, nil, fmt.Errorf("fixed NAT create plan is incomplete")
+		}
+		if err := validateCreateNATReservationsAvailableLocked(requestedReservations, owner); err != nil {
+			return 0, nil, err
+		}
+		return activateCreateNATReservationLocked(0, requestedReservations, owner, true)
+	}
 	if !cfg.WantsNAT() {
 		return activateCreateNATReservationLocked(0, nil, owner, false)
 	}
@@ -714,7 +772,7 @@ func ReserveCreateNATPorts(cfg ContainerConfig) (int, func(), error) {
 	excluded := cfg.RequestedNATHostPorts()
 	excluded = append(excluded, allReservedCreateNATHostPortsLocked(owner)...)
 	managementPort := cfg.ManagementPort
-	if managementPort == 0 {
+	if managementPort == 0 && cfg.AutomaticallyMapPorts() {
 		var err error
 		managementPort, err = config.AllocateSSHPortExcluding(excluded)
 		if err != nil {
@@ -752,6 +810,31 @@ func ReserveBatchCreateNATPorts(configs []ContainerConfig) ([]ContainerConfig, e
 	for i := range planned {
 		cfg := &planned[i]
 		cfg.NATPortMappings = append([]config.PortMapping(nil), cfg.NATPortMappings...)
+		if cfg.FixedPortAllocation {
+			owner := createNATReservationOwner(cfg.Name)
+			if owner == "" {
+				rollback()
+				return nil, fmt.Errorf("container name is required for fixed NAT allocation")
+			}
+			if _, exists := queuedCreateNATReservations[owner]; exists {
+				rollback()
+				return nil, fmt.Errorf("container creation already has a reserved network plan: %s", cfg.Name)
+			}
+			for _, activeOwner := range activeCreateNATOwners {
+				if activeOwner == owner {
+					rollback()
+					return nil, fmt.Errorf("container creation already has an active fixed port plan: %s", cfg.Name)
+				}
+			}
+			if err := planFixedCreatePortsLocked(cfg); err != nil {
+				rollback()
+				return nil, err
+			}
+			queuedCreateNATReservations[owner] = createNATReservationMappings(*cfg, 0)
+			queuedCreateNATMirrorsIPv6[owner] = true
+			addedOwners = append(addedOwners, owner)
+			continue
+		}
 		if !cfg.WantsNAT() {
 			if config.NormalizeVirtualization(cfg.Virtualization) != config.VirtualizationKVM && !cfg.WantsLANIPv4() {
 				owner := createNATReservationOwner(cfg.Name)
@@ -791,7 +874,7 @@ func ReserveBatchCreateNATPorts(configs []ContainerConfig) ([]ContainerConfig, e
 
 		excluded := cfg.RequestedNATHostPorts()
 		excluded = append(excluded, allReservedCreateNATHostPortsLocked(owner)...)
-		if cfg.ManagementPort == 0 {
+		if cfg.ManagementPort == 0 && cfg.AutomaticallyMapPorts() {
 			port, err := config.AllocateSSHPortExcluding(excluded)
 			if err != nil {
 				rollback()
@@ -800,7 +883,7 @@ func ReserveBatchCreateNATPorts(configs []ContainerConfig) ([]ContainerConfig, e
 			cfg.ManagementPort = port
 		}
 
-		if len(cfg.NATPortMappings) == 0 && cfg.PortMappingCount > 1 {
+		if cfg.AutomaticallyMapPorts() && len(cfg.NATPortMappings) == 0 && cfg.PortMappingCount > 1 {
 			generated, err := planDefaultCreateNATMappingsLocked(*cfg, cfg.PortMappingCount-1, owner)
 			if err != nil {
 				rollback()
@@ -862,12 +945,39 @@ func createNATReservationOwner(name string) string {
 }
 
 func createNATReservationMappings(cfg ContainerConfig, managementPort int) []config.PortMapping {
+	if cfg.FixedPortAllocation {
+		candidate := fixedCreateCandidate(cfg)
+		return allocatedPortMappings(&candidate)
+	}
 	reservations := make([]config.PortMapping, 0, len(cfg.NATPortMappings))
 	if managementPort > 0 {
 		reservations = append(reservations, config.PortMapping{HostPort: managementPort, Protocol: "tcp"})
 	}
 	reservations = append(reservations, cfg.NATPortMappings...)
 	return reservations
+}
+
+func validatePortMappingCreateReservation(c *config.Container, mapping config.PortMapping) error {
+	createNATReservationMu.Lock()
+	defer createNATReservationMu.Unlock()
+	owner := createNATReservationOwner(c.Name)
+	for id, reserved := range createNATReservations {
+		if owner != "" && activeCreateNATOwners[id] == owner {
+			continue
+		}
+		if conflictingCreateNATReservation(mapping, reserved) {
+			return fmt.Errorf("NAT host port %d/%s is reserved by an active container creation", mapping.HostPort, mapping.Protocol)
+		}
+	}
+	for reservedOwner, reserved := range queuedCreateNATReservations {
+		if owner != "" && reservedOwner == owner {
+			continue
+		}
+		if conflictingCreateNATReservation(mapping, reserved) {
+			return fmt.Errorf("NAT host port %d/%s is reserved by queued container creation %s", mapping.HostPort, mapping.Protocol, reservedOwner)
+		}
+	}
+	return nil
 }
 
 func validateCreateNATReservationsAvailableLocked(requested []config.PortMapping, exceptOwner string) error {
@@ -971,7 +1081,7 @@ func allocateDefaultEqualPorts(c *config.Container, count int) []int {
 	if count <= 0 {
 		return nil
 	}
-	used := map[int]bool{}
+	used := config.FixedNATReservedPorts(c.Name)
 	// Mark current container's ports
 	for _, pm := range c.PortMappings {
 		for _, hostIP := range expandPortMappingHostIPs(c, pm) {
@@ -1007,6 +1117,9 @@ func HostPortAvailable(c *config.Container, hostIP string, hostPort int, protoco
 		return false
 	}
 	pm := config.PortMapping{HostIP: strings.TrimSpace(hostIP), HostPort: hostPort, Protocol: protocol}
+	if err := validateFixedMapping(c, pm, false); err != nil {
+		return false
+	}
 	for _, existing := range c.PortMappings {
 		if portMappingsConflict(c, pm, c, existing) {
 			return false

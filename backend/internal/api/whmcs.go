@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -101,7 +102,9 @@ func HandleWHMCS(w http.ResponseWriter, r *http.Request) {
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/api/v1/whmcs/")
 	if path == "capabilities" && r.Method == "GET" {
-		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"version": "1", "virtualization": "lxc", "billing_reasons": true, "cpu_percent": true, "swap_mb": true, "ssh_key_offline": true, "conditional_mappings": true, "uuid_tickets": true, "paid_traffic_reset": true, "traffic_quota_2mbps": lxc.WHMCSTrafficQuotaAvailable(), "image_rename": true, "instance_epoch": whmcsInstanceEpoch}})
+		start, end := config.NATPortRange()
+		portRange := map[string]int{"start": start, "end": end}
+		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"version": "1", "virtualization": "lxc", "billing_reasons": true, "cpu_percent": true, "swap_mb": true, "ssh_key_offline": true, "conditional_mappings": true, "uuid_tickets": true, "paid_traffic_reset": true, "traffic_quota_2mbps": lxc.WHMCSTrafficQuotaAvailable(), "image_rename": true, "manual_port_mappings": true, "fixed_port_allocations": true, "nat4_port_range": portRange, "nat6_port_range": portRange, "instance_epoch": whmcsInstanceEpoch}})
 		return
 	}
 	parts := strings.Split(path, "/")
@@ -171,12 +174,13 @@ func HandleWHMCS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Owner         string `json:"owner"`
-		Blocked       *bool  `json:"blocked"`
-		CPUPercent    *int   `json:"cpu_percent"`
-		SwapMB        *int   `json:"swap_mb"`
-		PortLimit     *int   `json:"port_mapping_limit"`
-		IPv6PortLimit *int   `json:"ipv6_port_mapping_limit"`
+		Owner               string `json:"owner"`
+		Blocked             *bool  `json:"blocked"`
+		CPUPercent          *int   `json:"cpu_percent"`
+		SwapMB              *int   `json:"swap_mb"`
+		PortLimit           *int   `json:"port_mapping_limit"`
+		IPv6PortLimit       *int   `json:"ipv6_port_mapping_limit"`
+		FixedPortAllocation *bool  `json:"fixed_port_allocation"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 32768))
 	d.DisallowUnknownFields()
@@ -231,10 +235,19 @@ func HandleWHMCS(w http.ResponseWriter, r *http.Request) {
 		}
 		next.IPv6PortMappingLimit = *req.IPv6PortLimit
 	}
-	*c = next
-	if err := config.SaveConfig(); err != nil {
-		*c = old
-		jsonResponse(w, 500, APIResponse{Success: false, Message: "Cannot persist policy"})
+	if req.FixedPortAllocation != nil {
+		next.FixedPortAllocation = *req.FixedPortAllocation
+	}
+	var applyPolicy func(*config.Container) error
+	if !next.BillingBlocked() && (req.CPUPercent != nil || req.SwapMB != nil) {
+		applyPolicy = lxcManager.ApplyContainerLimits
+	}
+	if err := lxc.ChangeFixedPortPolicy(c, next, applyPolicy); err != nil {
+		status := 400
+		if errors.Is(err, lxc.ErrFixedPortPersistence) || errors.Is(err, lxc.ErrFixedPortApply) {
+			status = 500
+		}
+		jsonResponse(w, status, APIResponse{Success: false, Message: err.Error()})
 		return
 	}
 	if c.BillingBlocked() {
@@ -251,17 +264,9 @@ func HandleWHMCS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-	} else if req.CPUPercent != nil || req.SwapMB != nil {
-		if err := lxcManager.ApplyContainerLimits(c); err != nil {
-			*c = old
-			_ = config.SaveConfig()
-			_ = lxcManager.ApplyContainerLimits(c)
-			jsonResponse(w, 500, APIResponse{Success: false, Message: err.Error()})
-			return
-		}
 	}
 	config.AddAuditLog("whmcs.policy", c.Name, "Billing policy updated", requestActor(r))
-	jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"blocked": c.BillingBlocked(), "cpu_percent": c.CPUPercent, "swap_mb": c.SwapMB}})
+	jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"blocked": c.BillingBlocked(), "cpu_percent": c.CPUPercent, "swap_mb": c.SwapMB, "fixed_port_allocation": c.FixedPortAllocation, "nat_port_allocations": c.NATPortAllocations, "ipv6_nat_port_allocations": c.IPv6NATPortAllocations}})
 }
 
 // Existing terminal sockets are closed on restrictions, expiry, or deletion.

@@ -113,6 +113,11 @@ func validateIPv6MappingInventory(candidate *config.Container) error {
 	if err != nil {
 		return err
 	}
+	for _, mapping := range mappings {
+		if err := validateFixedMapping(candidate, mapping, true); err != nil {
+			return err
+		}
+	}
 	if !ipv6MappingsSyncIPv4(candidate) && len(mappings) > ipv6MappingLimit(candidate) {
 		return fmt.Errorf("IPv6 port mapping quota exceeded: %d/%d", len(mappings), ipv6MappingLimit(candidate))
 	}
@@ -161,12 +166,15 @@ func validateIPv6MappingInventory(candidate *config.Container) error {
 func createUsesIPv6PortSynchronization(cfg ContainerConfig) bool {
 	return config.AppConfig != nil && config.AppConfig.IPv6NAT.Enabled &&
 		config.NormalizeVirtualization(cfg.Virtualization) != config.VirtualizationKVM && !cfg.WantsLANIPv4() &&
-		(cfg.IPv6NATSyncIPv4 == nil || *cfg.IPv6NATSyncIPv4)
+		(cfg.FixedPortAllocation || cfg.IPv6NATSyncIPv4 == nil || *cfg.IPv6NATSyncIPv4)
 }
 
 func createNAT6PortAvailable(cfg ContainerConfig, port int, protocol string) bool {
 	if !createUsesIPv6PortSynchronization(cfg) {
 		return true
+	}
+	if config.FixedNATReservedPorts(cfg.Name)[port] {
+		return false
 	}
 	for _, container := range config.AppConfig.Containers {
 		if container.IsKVM() || container.IPv6NATAddress == "" {
@@ -264,7 +272,10 @@ func normalizeIPv6PortMapping(c *config.Container, mapping config.PortMapping) (
 	if mapping.HostPort == 0 {
 		mapping.HostPort = mapping.ContainerPort
 	}
-	if !config.NATPortInRange(mapping.HostPort) {
+	if err := validateFixedMapping(c, mapping, true); err != nil {
+		return mapping, err
+	}
+	if !config.NATPortInRange(mapping.HostPort) && !(c.FixedPortAllocation && containsPort(c.IPv6NATPortAllocations, mapping.HostPort)) {
 		start, end := config.NATPortRange()
 		return mapping, fmt.Errorf("host port must be within configured NAT range %d-%d", start, end)
 	}
@@ -363,6 +374,14 @@ func (m *Manager) SetIPv6NATSync(id int, enabled bool) (IPv6PortMappingState, er
 		candidate.IPv6PortMappings = mappings
 	}
 	candidate.IPv6NATSyncIPv4 = &enabled
+	if candidate.FixedPortAllocation {
+		createNATReservationMu.Lock()
+		err := planFixedPortPoolsLocked(&candidate)
+		createNATReservationMu.Unlock()
+		if err != nil {
+			return IPv6PortMappingState{}, err
+		}
+	}
 	if err := validateIPv6MappingInventory(&candidate); err != nil {
 		return IPv6PortMappingState{}, err
 	}
@@ -380,9 +399,11 @@ func persistIPv6MappingChange(m *Manager, current *config.Container, candidate c
 	previous := *current
 	current.IPv6PortMappings = candidate.IPv6PortMappings
 	current.IPv6NATSyncIPv4 = candidate.IPv6NATSyncIPv4
+	current.NATPortAllocations, current.IPv6NATPortAllocations = candidate.NATPortAllocations, candidate.IPv6NATPortAllocations
 	if err := saveIPv6PortMappingConfig(); err != nil {
 		if current = config.FindContainer(candidate.ID); current != nil {
 			current.IPv6PortMappings, current.IPv6NATSyncIPv4 = previous.IPv6PortMappings, previous.IPv6NATSyncIPv4
+			current.NATPortAllocations, current.IPv6NATPortAllocations = previous.NATPortAllocations, previous.IPv6NATPortAllocations
 		}
 		return err
 	}
@@ -397,6 +418,9 @@ func persistIPv6MappingChange(m *Manager, current *config.Container, candidate c
 
 func IPv6HostPortAvailable(c *config.Container, port int, protocol string) bool {
 	if c == nil || !config.NATPortInRange(port) {
+		return false
+	}
+	if config.FixedNATReservedPorts(c.Name)[port] {
 		return false
 	}
 	_, host, _, available := nat6PortEndpoint(c)

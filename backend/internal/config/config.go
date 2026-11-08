@@ -165,6 +165,9 @@ type Container struct {
 	SSHHostKey                    string                 `json:"ssh_host_key,omitempty"`
 	PortMappings                  []PortMapping          `json:"port_mappings"`
 	PortMappingLimit              int                    `json:"port_mapping_limit"`
+	FixedPortAllocation           bool                   `json:"fixed_port_allocation"`
+	NATPortAllocations            []int                  `json:"nat_port_allocations"`
+	IPv6NATPortAllocations        []int                  `json:"ipv6_nat_port_allocations"`
 	FirewallEnabled               bool                   `json:"firewall_enabled"`
 	FirewallDefaultAction         string                 `json:"firewall_default_action"`
 	FirewallRules                 []FirewallRule         `json:"firewall_rules"`
@@ -1640,6 +1643,25 @@ func AddContainer(c Container) {
 	SaveConfig()
 }
 
+// AddContainerPersisted does not publish a fixed port owner unless its metadata
+// and allocations are committed to the same configuration transaction.
+func AddContainerPersisted(c Container) error {
+	allocationMu.Lock()
+	defer allocationMu.Unlock()
+	if c.UUID == "" {
+		c.UUID = NewContainerUUID()
+	}
+	c.Virtualization = NormalizeVirtualization(c.Virtualization)
+	NormalizeContainerResourceAliases(&c)
+	previous := AppConfig.Containers
+	AppConfig.Containers = append(AppConfig.Containers, c)
+	if err := SaveConfig(); err != nil {
+		AppConfig.Containers = previous
+		return err
+	}
+	return nil
+}
+
 // AllocateContainerID allocates a new container ID
 func AllocateContainerID() int {
 	allocationMu.Lock()
@@ -1958,8 +1980,11 @@ func previewSSHPortExcluding(excluded []int) (int, error) {
 
 // collectAllHostPorts collects all host ports used by any container (LXC + KVM)
 func collectAllHostPorts() map[int]bool {
-	used := map[int]bool{}
+	used := FixedNATReservedPorts("")
 	for _, c := range AppConfig.Containers {
+		for _, port := range append(append([]int(nil), c.NATPortAllocations...), c.IPv6NATPortAllocations...) {
+			used[port] = true
+		}
 		for _, pm := range c.PortMappings {
 			used[pm.HostPort] = true
 		}

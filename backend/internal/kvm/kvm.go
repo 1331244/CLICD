@@ -472,6 +472,9 @@ func (m *Manager) CreateContainer(cfg lxc.ContainerConfig) error {
 	if err := cfg.NormalizeCreateNATMappings(); err != nil {
 		return err
 	}
+	if err := lxc.EnsureFixedCreatePortPlan(&cfg); err != nil {
+		return err
+	}
 	if cfg.SnapshotLimit <= 0 {
 		cfg.SnapshotLimit = config.DefaultSnapshotLimit
 	}
@@ -496,7 +499,14 @@ func (m *Manager) CreateContainer(cfg lxc.ContainerConfig) error {
 		_ = m.cleanupVM(vmName)
 		return err
 	}
-	config.AddContainer(*c)
+	if cfg.FixedPortAllocation {
+		if err := config.AddContainerPersisted(*c); err != nil {
+			_ = m.cleanupVM(vmName)
+			return err
+		}
+	} else {
+		config.AddContainer(*c)
+	}
 	return nil
 }
 
@@ -639,7 +649,7 @@ func (m *Manager) defineContainer(id int, vmName string, cfg lxc.ContainerConfig
 
 	sshPort := 0
 	portMappings := []config.PortMapping{}
-	if allocatePorts && cfg.WantsNAT() {
+	if allocatePorts && cfg.WantsNAT() && cfg.AutomaticallyMapPorts() {
 		cfg.ReportProgress("nat", "分配并配置 NAT 端口")
 		sshPort = managementPort
 		if sshPort <= 0 {
@@ -715,13 +725,16 @@ func (m *Manager) defineContainer(id int, vmName string, cfg lxc.ContainerConfig
 			}
 			return sshPassword
 		}(),
-		PortMappings:         portMappings,
-		PortMappingLimit:     cfg.PortMappingCount,
-		AllowedImageIDs:      append([]string(nil), cfg.AllowedImageIDs...),
-		ImageLimitConfigured: cfg.ImageLimitConfigured,
-		SnapshotLimit:        config.NormalizeSnapshotLimit(cfg.SnapshotLimit),
-		CreatedAt:            now,
-		ExpiresAt:            cfg.ExpiresAt,
+		PortMappings:           portMappings,
+		PortMappingLimit:       cfg.PortMappingCount,
+		FixedPortAllocation:    cfg.FixedPortAllocation,
+		NATPortAllocations:     append([]int(nil), cfg.NATPortAllocations...),
+		IPv6NATPortAllocations: append([]int(nil), cfg.IPv6NATPortAllocations...),
+		AllowedImageIDs:        append([]string(nil), cfg.AllowedImageIDs...),
+		ImageLimitConfigured:   cfg.ImageLimitConfigured,
+		SnapshotLimit:          config.NormalizeSnapshotLimit(cfg.SnapshotLimit),
+		CreatedAt:              now,
+		ExpiresAt:              cfg.ExpiresAt,
 	}
 	if image.IsManualDisk() {
 		container.Standalone = true
@@ -2924,38 +2937,29 @@ func normalizeKVMManagementPortMapping(c *config.Container) {
 	if c == nil || !c.IsKVM() {
 		return
 	}
-	hostPort := c.SSHPort
-	if hostPort <= 0 {
-		allocated, err := config.AllocateSSHPort()
-		if err != nil {
-			return
-		}
-		hostPort = allocated
-		c.SSHPort = hostPort
-	}
 	desiredPort := 22
 	description := "SSH"
 	if IsWindowsImage(c.Template) {
 		desiredPort = 3389
 		description = "RDP"
 	}
-	mapping := config.PortMapping{
-		ContainerPort: desiredPort,
-		HostPort:      hostPort,
-		Protocol:      "tcp",
-		Description:   description,
-	}
+	// Only the legacy automatic management rule follows an OS change. Rules
+	// created by the customer, including an intentionally empty list, stay intact.
 	for i, pm := range c.PortMappings {
-		if strings.EqualFold(pm.Description, "SSH") || strings.EqualFold(pm.Description, "RDP") || pm.ContainerPort == 22 || pm.ContainerPort == 3389 || pm.HostPort == hostPort {
-			if pm.HostPort > 0 {
-				mapping.HostPort = pm.HostPort
-				c.SSHPort = pm.HostPort
-			}
-			c.PortMappings[i] = mapping
+		if strings.EqualFold(pm.Description, "SSH") || strings.EqualFold(pm.Description, "RDP") {
+			c.PortMappings[i].ContainerPort = desiredPort
+			c.PortMappings[i].Description = description
+			c.PortMappings[i].Protocol = "tcp"
+			break
+		}
+	}
+	c.SSHPort = 0
+	for _, pm := range c.PortMappings {
+		if (pm.Protocol == "" || strings.EqualFold(pm.Protocol, "tcp")) && pm.ContainerPort == desiredPort {
+			c.SSHPort = pm.HostPort
 			return
 		}
 	}
-	c.PortMappings = append([]config.PortMapping{mapping}, c.PortMappings...)
 }
 
 func getVNCPort(name string) int {

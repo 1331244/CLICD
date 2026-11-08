@@ -20,49 +20,53 @@ var (
 )
 
 type savedTaskConfig struct {
-	Name                 string        `json:"name"`
-	Virtualization       string        `json:"virtualization,omitempty"`
-	TemplateID           string        `json:"template_id"`
-	StoragePoolID        string        `json:"storage_pool_id,omitempty"`
-	VCPU                 float64       `json:"vcpu"`
-	CPUPercent           int           `json:"cpu_percent"`
-	RAMMB                int           `json:"ram_mb"`
-	DiskGB               float64       `json:"disk_gb"`
-	NetworkBWMbps        int           `json:"network_bw_mbps"`
-	NetworkDownMbps      int           `json:"network_down_mbps"`
-	NetworkUpMbps        int           `json:"network_up_mbps"`
-	MonthlyTrafficGB     int           `json:"monthly_traffic_gb"`
-	TrafficMode          string        `json:"traffic_mode"`
-	TrafficInGB          int           `json:"traffic_in_gb"`
-	TrafficOutGB         int           `json:"traffic_out_gb"`
-	IOSpeedMBps          int           `json:"io_speed_mbps"`
-	IOReadMBps           int           `json:"io_read_mbps"`
-	IOWriteMBps          int           `json:"io_write_mbps"`
-	ExtraPorts           []int         `json:"extra_ports"`
-	NATPortMappings      []PortMapping `json:"nat_port_mappings,omitempty"`
-	ManagementPort       int           `json:"management_port,omitempty"`
-	PortMappingCount     int           `json:"port_mapping_count"`
-	AssignNAT            *bool         `json:"assign_nat,omitempty"`
-	LANIPv4Mode          string        `json:"lan_ipv4_mode,omitempty"`
-	LANInterface         string        `json:"lan_interface,omitempty"`
-	LANIPv4Address       string        `json:"lan_ipv4_address,omitempty"`
-	LANIPv4PrefixLen     int           `json:"lan_ipv4_prefix_len,omitempty"`
-	LANIPv4Gateway       string        `json:"lan_ipv4_gateway,omitempty"`
-	SnapshotLimit        int           `json:"snapshot_limit"`
-	AllowedImageIDs      []string      `json:"allowed_image_ids,omitempty"`
-	ImageLimitConfigured bool          `json:"image_limit_configured,omitempty"`
-	AssignIPv4           bool          `json:"assign_ipv4"`
-	IPv4Count            int           `json:"ipv4_count,omitempty"`
-	PublicIPv4s          []string      `json:"public_ipv4s,omitempty"`
-	AssignIPv6           bool          `json:"assign_ipv6"`
-	IPv6Count            int           `json:"ipv6_count,omitempty"`
-	IPv6Addresses        []string      `json:"ipv6_addresses,omitempty"`
-	IPv6PortMappingCount int           `json:"ipv6_port_mapping_count,omitempty"`
-	IPv6NATSyncIPv4      *bool         `json:"ipv6_nat_sync_ipv4,omitempty"`
-	SSHAuthMode          string        `json:"ssh_auth_mode,omitempty"`
-	SSHPassword          string        `json:"ssh_password,omitempty"`
-	SSHPublicKey         string        `json:"ssh_public_key,omitempty"`
-	ExpiresAt            string        `json:"expires_at"`
+	Name                   string        `json:"name"`
+	Virtualization         string        `json:"virtualization,omitempty"`
+	TemplateID             string        `json:"template_id"`
+	StoragePoolID          string        `json:"storage_pool_id,omitempty"`
+	VCPU                   float64       `json:"vcpu"`
+	CPUPercent             int           `json:"cpu_percent"`
+	RAMMB                  int           `json:"ram_mb"`
+	DiskGB                 float64       `json:"disk_gb"`
+	NetworkBWMbps          int           `json:"network_bw_mbps"`
+	NetworkDownMbps        int           `json:"network_down_mbps"`
+	NetworkUpMbps          int           `json:"network_up_mbps"`
+	MonthlyTrafficGB       int           `json:"monthly_traffic_gb"`
+	TrafficMode            string        `json:"traffic_mode"`
+	TrafficInGB            int           `json:"traffic_in_gb"`
+	TrafficOutGB           int           `json:"traffic_out_gb"`
+	IOSpeedMBps            int           `json:"io_speed_mbps"`
+	IOReadMBps             int           `json:"io_read_mbps"`
+	IOWriteMBps            int           `json:"io_write_mbps"`
+	ExtraPorts             []int         `json:"extra_ports"`
+	NATPortMappings        []PortMapping `json:"nat_port_mappings,omitempty"`
+	ManagementPort         int           `json:"management_port,omitempty"`
+	PortMappingCount       int           `json:"port_mapping_count"`
+	AutoPortMappings       *bool         `json:"auto_port_mappings,omitempty"`
+	FixedPortAllocation    bool          `json:"fixed_port_allocation,omitempty"`
+	NATPortAllocations     []int         `json:"nat_port_allocations,omitempty"`
+	IPv6NATPortAllocations []int         `json:"ipv6_nat_port_allocations,omitempty"`
+	AssignNAT              *bool         `json:"assign_nat,omitempty"`
+	LANIPv4Mode            string        `json:"lan_ipv4_mode,omitempty"`
+	LANInterface           string        `json:"lan_interface,omitempty"`
+	LANIPv4Address         string        `json:"lan_ipv4_address,omitempty"`
+	LANIPv4PrefixLen       int           `json:"lan_ipv4_prefix_len,omitempty"`
+	LANIPv4Gateway         string        `json:"lan_ipv4_gateway,omitempty"`
+	SnapshotLimit          int           `json:"snapshot_limit"`
+	AllowedImageIDs        []string      `json:"allowed_image_ids,omitempty"`
+	ImageLimitConfigured   bool          `json:"image_limit_configured,omitempty"`
+	AssignIPv4             bool          `json:"assign_ipv4"`
+	IPv4Count              int           `json:"ipv4_count,omitempty"`
+	PublicIPv4s            []string      `json:"public_ipv4s,omitempty"`
+	AssignIPv6             bool          `json:"assign_ipv6"`
+	IPv6Count              int           `json:"ipv6_count,omitempty"`
+	IPv6Addresses          []string      `json:"ipv6_addresses,omitempty"`
+	IPv6PortMappingCount   int           `json:"ipv6_port_mapping_count,omitempty"`
+	IPv6NATSyncIPv4        *bool         `json:"ipv6_nat_sync_ipv4,omitempty"`
+	SSHAuthMode            string        `json:"ssh_auth_mode,omitempty"`
+	SSHPassword            string        `json:"ssh_password,omitempty"`
+	SSHPublicKey           string        `json:"ssh_public_key,omitempty"`
+	ExpiresAt              string        `json:"expires_at"`
 }
 
 func parseSavedTaskConfig(raw string) savedTaskConfig {
@@ -355,6 +359,7 @@ func ensureSchema() error {
 			cfg_io_write_mbps INTEGER NOT NULL DEFAULT 0,
 			cfg_management_port INTEGER NOT NULL DEFAULT 0,
 			cfg_port_mapping_count INTEGER,
+			cfg_auto_port_mappings INTEGER,
 			cfg_assign_nat INTEGER,
 			cfg_lan_ipv4_mode TEXT,
 			cfg_lan_interface TEXT,
@@ -397,6 +402,13 @@ func ensureSchema() error {
 			ip TEXT,
 			user_agent TEXT,
 			success INTEGER
+		)`,
+		`CREATE TABLE IF NOT EXISTS fixed_port_allocations (
+			owner_kind TEXT NOT NULL,
+			owner_id TEXT NOT NULL,
+			nat_ports TEXT NOT NULL,
+			ipv6_nat_ports TEXT NOT NULL,
+			PRIMARY KEY (owner_kind, owner_id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS enabled_images (
 			position INTEGER PRIMARY KEY,
@@ -444,6 +456,7 @@ func ensureSchemaMigrations() error {
 		{"tasks", "cfg_io_read_mbps", "INTEGER NOT NULL DEFAULT 0"},
 		{"tasks", "cfg_io_write_mbps", "INTEGER NOT NULL DEFAULT 0"},
 		{"tasks", "cfg_management_port", "INTEGER NOT NULL DEFAULT 0"},
+		{"tasks", "cfg_auto_port_mappings", "INTEGER"},
 		{"tasks", "cfg_assign_ipv4", "INTEGER"},
 		{"tasks", "cfg_ipv4_count", "INTEGER"},
 		{"tasks", "cfg_public_ipv4s", "TEXT"},
@@ -713,6 +726,7 @@ func saveConfigToDB() error {
 		"audit_logs",
 		"task_extra_ports",
 		"task_nat_port_mappings",
+		"fixed_port_allocations",
 		"tasks",
 		"login_logs",
 		"enabled_images",
@@ -749,6 +763,9 @@ func saveConfigToDB() error {
 		return err
 	}
 	if err := saveSnapshots(tx); err != nil {
+		return err
+	}
+	if err := saveFixedPortAllocations(tx); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -930,18 +947,18 @@ func saveTasksDB(tx *sql.Tx) error {
 			cfg_network_bw_mbps, cfg_network_down_mbps, cfg_network_up_mbps,
 			cfg_monthly_traffic_gb, cfg_traffic_mode, cfg_traffic_in_gb,
 			cfg_traffic_out_gb, cfg_io_speed_mbps, cfg_io_read_mbps, cfg_io_write_mbps,
-			cfg_management_port, cfg_port_mapping_count, cfg_assign_nat, cfg_lan_ipv4_mode, cfg_lan_interface,
+			cfg_management_port, cfg_port_mapping_count, cfg_auto_port_mappings, cfg_assign_nat, cfg_lan_ipv4_mode, cfg_lan_interface,
 			cfg_lan_ipv4_address, cfg_lan_ipv4_prefix_len, cfg_lan_ipv4_gateway, cfg_snapshot_limit,
 			cfg_assign_ipv4, cfg_ipv4_count, cfg_public_ipv4s, cfg_assign_ipv6, cfg_ipv6_count, cfg_ipv6_addresses,
 			cfg_ssh_auth_mode, cfg_ssh_password, cfg_ssh_public_key, cfg_allowed_image_ids, cfg_image_limit_configured, cfg_expires_at,
 			cfg_ipv6_port_mapping_count, cfg_ipv6_nat_sync_ipv4
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			task.ID, task.Type, task.ContainerID, task.ContainerName, task.Status, task.Error, task.CreatedAt, task.TemplateID, task.User, task.IP, task.UserAgent,
 			cfg.Name, cfg.Virtualization, cfg.TemplateID, cfg.VCPU, cfg.CPUPercent, cfg.RAMMB, cfg.DiskGB,
 			cfg.NetworkBWMbps, cfg.NetworkDownMbps, cfg.NetworkUpMbps,
 			cfg.MonthlyTrafficGB, cfg.TrafficMode, cfg.TrafficInGB,
 			cfg.TrafficOutGB, cfg.IOSpeedMBps, cfg.IOReadMBps, cfg.IOWriteMBps,
-			cfg.ManagementPort, cfg.PortMappingCount, boolPtrInt(cfg.AssignNAT), cfg.LANIPv4Mode, cfg.LANInterface,
+			cfg.ManagementPort, cfg.PortMappingCount, boolPtrInt(cfg.AutoPortMappings), boolPtrInt(cfg.AssignNAT), cfg.LANIPv4Mode, cfg.LANInterface,
 			cfg.LANIPv4Address, cfg.LANIPv4PrefixLen, cfg.LANIPv4Gateway, cfg.SnapshotLimit,
 			boolInt(cfg.AssignIPv4), cfg.IPv4Count, encodeStringSlice(cfg.PublicIPv4s),
 			boolInt(cfg.AssignIPv6), cfg.IPv6Count, encodeStringSlice(cfg.IPv6Addresses),
@@ -1086,6 +1103,11 @@ func loadContainers() ([]Container, error) {
 		return nil, err
 	}
 	for i := range result {
+		fixed, ports, ipv6Ports, err := loadFixedPortAllocation("container", strconv.Itoa(result[i].ID))
+		if err != nil {
+			return nil, err
+		}
+		result[i].FixedPortAllocation, result[i].NATPortAllocations, result[i].IPv6NATPortAllocations = fixed, ports, ipv6Ports
 		result[i].PortMappings, err = loadPortMappings(result[i].ID)
 		if err != nil {
 			return nil, err
@@ -1277,7 +1299,7 @@ func loadTasks() ([]SavedTask, error) {
 		cfg_network_bw_mbps, cfg_network_down_mbps, cfg_network_up_mbps,
 		cfg_monthly_traffic_gb, cfg_traffic_mode, cfg_traffic_in_gb,
 		cfg_traffic_out_gb, cfg_io_speed_mbps, cfg_io_read_mbps, cfg_io_write_mbps,
-		cfg_management_port, cfg_port_mapping_count, cfg_assign_nat, cfg_lan_ipv4_mode, cfg_lan_interface,
+		cfg_management_port, cfg_port_mapping_count, cfg_auto_port_mappings, cfg_assign_nat, cfg_lan_ipv4_mode, cfg_lan_interface,
 		cfg_lan_ipv4_address, cfg_lan_ipv4_prefix_len, cfg_lan_ipv4_gateway, cfg_snapshot_limit,
 		cfg_assign_ipv4, cfg_ipv4_count, cfg_public_ipv4s, cfg_assign_ipv6, cfg_ipv6_count, cfg_ipv6_addresses,
 		cfg_ssh_auth_mode, cfg_ssh_password, cfg_ssh_public_key, cfg_allowed_image_ids, cfg_image_limit_configured, cfg_expires_at,
@@ -1295,14 +1317,14 @@ func loadTasks() ([]SavedTask, error) {
 		var assignIPv4, assignIPv6, imageLimitConfigured int
 		var ip, userAgent, publicIPv4s, ipv6Addresses sql.NullString
 		var lanIPv4Mode, lanInterface, lanIPv4Address, lanIPv4Gateway, sshAuthMode, sshPassword, sshPublicKey, allowedImageIDs sql.NullString
-		var assignNAT, lanIPv4PrefixLen, ipv4Count, ipv6Count, ipv6NATSyncIPv4 sql.NullInt64
+		var autoPortMappings, assignNAT, lanIPv4PrefixLen, ipv4Count, ipv6Count, ipv6NATSyncIPv4 sql.NullInt64
 		if err := rows.Scan(
 			&t.ID, &t.Type, &t.ContainerID, &t.ContainerName, &t.Status, &t.Error, &t.CreatedAt, &t.TemplateID, &t.User, &ip, &userAgent,
 			&cfg.Name, &cfg.Virtualization, &cfg.TemplateID, &cfg.VCPU, &cfg.CPUPercent, &cfg.RAMMB, &cfg.DiskGB,
 			&cfg.NetworkBWMbps, &cfg.NetworkDownMbps, &cfg.NetworkUpMbps,
 			&cfg.MonthlyTrafficGB, &cfg.TrafficMode, &cfg.TrafficInGB,
 			&cfg.TrafficOutGB, &cfg.IOSpeedMBps, &cfg.IOReadMBps, &cfg.IOWriteMBps,
-			&cfg.ManagementPort, &cfg.PortMappingCount, &assignNAT, &lanIPv4Mode, &lanInterface,
+			&cfg.ManagementPort, &cfg.PortMappingCount, &autoPortMappings, &assignNAT, &lanIPv4Mode, &lanInterface,
 			&lanIPv4Address, &lanIPv4PrefixLen, &lanIPv4Gateway, &cfg.SnapshotLimit,
 			&assignIPv4, &ipv4Count, &publicIPv4s, &assignIPv6, &ipv6Count, &ipv6Addresses,
 			&sshAuthMode, &sshPassword, &sshPublicKey, &allowedImageIDs, &imageLimitConfigured, &cfg.ExpiresAt,
@@ -1313,6 +1335,10 @@ func loadTasks() ([]SavedTask, error) {
 		if ipv6NATSyncIPv4.Valid {
 			value := ipv6NATSyncIPv4.Int64 != 0
 			cfg.IPv6NATSyncIPv4 = &value
+		}
+		if autoPortMappings.Valid {
+			value := autoPortMappings.Int64 != 0
+			cfg.AutoPortMappings = &value
 		}
 		t.IP = ip.String
 		t.UserAgent = userAgent.String
@@ -1353,6 +1379,11 @@ func loadTasks() ([]SavedTask, error) {
 		return nil, err
 	}
 	for i := range result {
+		fixed, ports, ipv6Ports, err := loadFixedPortAllocation("task", result[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		configs[i].FixedPortAllocation, configs[i].NATPortAllocations, configs[i].IPv6NATPortAllocations = fixed, ports, ipv6Ports
 		configs[i].ExtraPorts, err = loadTaskExtraPorts(result[i].ID)
 		if err != nil {
 			return nil, err
