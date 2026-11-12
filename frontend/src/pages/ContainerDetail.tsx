@@ -109,6 +109,7 @@ import ResourceStatsPanel, {
 } from '../components/ResourceStatsPanel'
 import { generateSSHPassword, sshPasswordError, sshPublicKeyError, type ReinstallSSHAuthMode } from '../utils/sshAuth'
 import { formatMetricRate } from '../lib/format-metrics'
+import { containerDisplayName } from '../utils/containerName'
 
 const PUBLIC_HOST = window.location.hostname
 const inputClass = 'w-full px-3 py-2 text-sm'
@@ -152,6 +153,7 @@ export default function ContainerDetail() {
   const { isSubUser } = useAuth()
   const { t } = useLanguage()
   const [container, setContainer] = useState<Container | null>(null)
+  const displayName = containerDisplayName(container)
   const [manualInstall, setManualInstall] = useState<boolean | null>(null)
   const [hostInfo, setHostInfo] = useState<HostInfo | null>(null)
   const [usage, setUsage] = useState<ContainerUsage | null>(null)
@@ -400,7 +402,7 @@ export default function ContainerDetail() {
           await restartContainer(containerIdentifier)
           break
         case 'delete':
-          if (!(await dialog.confirm('删除容器', `确定要删除容器 ${container?.name} 吗？此操作不可撤销。`))) return
+          if (!(await dialog.confirm('删除容器', `确定要删除容器 ${displayName} 吗？此操作不可撤销。`))) return
           await deleteContainer(containerIdentifier)
           navigate('/containers')
           return
@@ -825,7 +827,7 @@ export default function ContainerDetail() {
     if (container?.status === 'running') {
       const confirmed = await dialog.confirm(
         '拍摄快照',
-        `拍摄快照需要先关机，完成后会自动重启容器 ${container.name}。是否继续？`
+        `拍摄快照需要先关机，完成后会自动重启容器 ${displayName}。是否继续？`
       )
       if (!confirmed) return
     }
@@ -1110,7 +1112,7 @@ export default function ContainerDetail() {
         <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div className="flex min-w-0 items-start gap-3 xl:flex-1">
             <div className="relative shrink-0">
-              <WorkloadIdentity runtime={container.virtualization} name={container.name} size="lg" />
+              <WorkloadIdentity runtime={container.virtualization} name={displayName} size="lg" />
               {getTemplateIcon(container.template || '') && (
                 <span className="absolute -bottom-1 -right-1 inline-flex rounded-md border bg-card p-0.5 [&_svg]:h-3 [&_svg]:w-3" title={container.template}>
                   {getTemplateIcon(container.template || '')}
@@ -1119,7 +1121,7 @@ export default function ContainerDetail() {
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="max-w-full truncate text-xl font-semibold tracking-tight text-foreground" title={container.name}>{container.name}</h1>
+                <h1 className="max-w-full truncate text-xl font-semibold tracking-tight text-foreground" title={displayName}>{displayName}</h1>
                 <StatusBadge running={isRunning} initializing={isInitializing} status={container.status} taskLabel={taskStatus ? taskActionLabels[taskStatus] || '处理中' : undefined} />
               </div>
               <div className="flex items-center gap-2 flex-wrap mt-2">
@@ -1333,7 +1335,7 @@ export default function ContainerDetail() {
       </div>
 
       {showDisks && <DiskManagerModal containerId={containerIdentifier} runtime={container.virtualization || 'lxc'} readOnly={isSubUser} onClose={() => setShowDisks(false)} onUpdated={fetchContainer} />}
-      {showTransfer && !isSubUser && <InstanceTransferModal containerId={containerIdentifier} containerName={container.name} runtime={container.virtualization || 'lxc'} onClose={() => setShowTransfer(false)} onUpdated={fetchContainer} />}
+      {showTransfer && !isSubUser && <InstanceTransferModal containerId={containerIdentifier} containerName={container.name} displayName={displayName} runtime={container.virtualization || 'lxc'} onClose={() => setShowTransfer(false)} onUpdated={fetchContainer} />}
       {isKVM && <KVMInstallMedia
         key={containerIdentifier}
         open={showInstallationMedia}
@@ -1523,10 +1525,10 @@ export default function ContainerDetail() {
       )}
 
       {showSSH && (
-        <Modal title={`WebSSH - ${container.name}`} onClose={() => setShowSSH(false)} wide>
+        <Modal title={`WebSSH - ${displayName}`} onClose={() => setShowSSH(false)} wide>
           <div className="h-[70vh] min-h-[520px]">
             {isRunning ? (
-              <WebSSHViewer containerName={container.name} onClose={() => setShowSSH(false)} />
+              <WebSSHViewer containerName={container.name} displayName={displayName} onClose={() => setShowSSH(false)} />
             ) : (
               <div className="h-full flex items-center justify-center bg-gray-950 text-muted-foreground rounded-md">容器未运行，请先开机</div>
             )}
@@ -1536,7 +1538,7 @@ export default function ContainerDetail() {
 
       {showVNC && (
         <Modal
-          title={`WebVNC - ${container.name}`}
+          title={`WebVNC - ${displayName}`}
           fullScreen={vncFullscreen}
           onClose={() => setShowVNC(false)}
           wide
@@ -1558,7 +1560,7 @@ export default function ContainerDetail() {
           >
             <div className="h-full">
             {canOpenVNC ? (
-              <WebVNCViewer containerName={container.name} onClose={() => setShowVNC(false)} />
+              <WebVNCViewer containerName={container.name} displayName={displayName} onClose={() => setShowVNC(false)} />
             ) : (
               <div className="h-full flex items-center justify-center bg-gray-950 text-muted-foreground rounded-md">VNC 控制台暂不可用，请确认 KVM 虚拟机已开机并刷新页面</div>
             )}

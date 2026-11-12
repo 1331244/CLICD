@@ -10,10 +10,11 @@ import { createWebSSHTicket } from '../services/api'
 
 interface WebSSHViewerProps {
   containerName: string
+  displayName?: string
   onClose: () => void
 }
 
-export default function WebSSHViewer({ containerName, onClose }: WebSSHViewerProps) {
+export default function WebSSHViewer({ containerName, displayName, onClose }: WebSSHViewerProps) {
   const terminalRef = useRef<HTMLDivElement>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const termRef = useRef<Terminal | null>(null)
@@ -112,7 +113,7 @@ export default function WebSSHViewer({ containerName, onClose }: WebSSHViewerPro
     ws.binaryType = 'arraybuffer'
     wsRef.current = ws
 
-    term.writeln(`Connecting to ${containerName} as root...`)
+    term.writeln(`Connecting to ${displayName || containerName} as root...`)
 
     ws.onopen = () => {
       setStatus('preparing')
@@ -174,7 +175,7 @@ export default function WebSSHViewer({ containerName, onClose }: WebSSHViewerPro
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-border bg-muted shrink-0">
         <div className="flex items-center gap-2">
           <TerminalSquare className="w-4 h-4 text-muted-foreground" />
-          <span className="text-sm font-medium text-foreground">WebSSH - {containerName}</span>
+          <span className="text-sm font-medium text-foreground">WebSSH - {displayName || containerName}</span>
           {status === 'connected' && (
             <Badge variant="secondary" className="text-xs px-1.5 py-0.5">已连接</Badge>
           )}

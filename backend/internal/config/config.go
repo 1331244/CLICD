@@ -113,6 +113,7 @@ type Container struct {
 	ID                            int                    `json:"id"`
 	UUID                          string                 `json:"uuid"`
 	Name                          string                 `json:"name"`
+	DisplayName                   string                 `json:"display_name,omitempty"`
 	Virtualization                string                 `json:"virtualization,omitempty"`
 	LXCName                       string                 `json:"lxc_name,omitempty"`
 	KVMName                       string                 `json:"kvm_name,omitempty"`

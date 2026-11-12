@@ -10,7 +10,7 @@ import { Input } from './ui/input'
 import { Label } from './ui/label'
 import { NativeSelect } from './ui/native-select'
 
-export default function InstanceTransferModal({ containerId, containerName, runtime, initialKind = 'backup', onClose, onUpdated }: { containerId: ContainerIdentifier; containerName: string; runtime: string; initialKind?: 'backup' | 'clone' | 'template'; onClose: () => void; onUpdated: () => void | Promise<void> }) {
+export default function InstanceTransferModal({ containerId, containerName, displayName, runtime, initialKind = 'backup', onClose, onUpdated }: { containerId: ContainerIdentifier; containerName: string; displayName?: string; runtime: string; initialKind?: 'backup' | 'clone' | 'template'; onClose: () => void; onUpdated: () => void | Promise<void> }) {
   const { t } = useLanguage()
   const [kind, setKind] = useState(initialKind)
   const [name, setName] = useState(initialKind === 'clone' ? `${containerName}-copy` : `${containerName}-${initialKind}`)
@@ -35,7 +35,7 @@ export default function InstanceTransferModal({ containerId, containerName, runt
     finally { setSubmitting(false) }
   }
   const content = kind === 'clone' ? runtime : 'backups'
-  return <Modal title={t('备份、克隆与模板')} description={containerName} onClose={onClose} size="2xl" dismissible={!submitting} footer={<>
+  return <Modal title={t('备份、克隆与模板')} description={displayName || containerName} onClose={onClose} size="2xl" dismissible={!submitting} footer={<>
     <Button variant="outline" disabled={submitting} onClick={onClose}>{t(taskId ? '后台继续' : '取消')}</Button>
     {!taskId && <Button disabled={submitting || !name.trim()} onClick={() => void submit()}>{t(submitting ? '正在提交…' : '提交任务')}</Button>}
   </>}>

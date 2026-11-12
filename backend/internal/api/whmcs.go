@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"regexp"
 	"strings"
@@ -104,7 +105,7 @@ func HandleWHMCS(w http.ResponseWriter, r *http.Request) {
 	if path == "capabilities" && r.Method == "GET" {
 		start, end := config.NATPortRange()
 		portRange := map[string]int{"start": start, "end": end}
-		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"version": "1", "virtualization": "lxc", "billing_reasons": true, "cpu_percent": true, "swap_mb": true, "ssh_key_offline": true, "conditional_mappings": true, "uuid_tickets": true, "paid_traffic_reset": true, "traffic_quota_2mbps": lxc.WHMCSTrafficQuotaAvailable(), "image_rename": true, "manual_port_mappings": true, "fixed_port_allocations": true, "nat4_port_range": portRange, "nat6_port_range": portRange, "instance_epoch": whmcsInstanceEpoch}})
+		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"version": "1", "virtualization": "lxc", "billing_reasons": true, "cpu_percent": true, "swap_mb": true, "ssh_key_offline": true, "conditional_mappings": true, "uuid_tickets": true, "paid_traffic_reset": true, "traffic_quota_2mbps": lxc.WHMCSTrafficQuotaAvailable(), "image_rename": true, "manual_port_mappings": true, "fixed_port_allocations": true, "instance_display_name": true, "nat4_port_range": portRange, "nat6_port_range": portRange, "instance_epoch": whmcsInstanceEpoch}})
 		return
 	}
 	parts := strings.Split(path, "/")
@@ -123,6 +124,26 @@ func HandleWHMCS(w http.ResponseWriter, r *http.Request) {
 	}
 	unlock := whmcsLock(c.UUID)
 	defer unlock()
+	if parts[2] == "display-name" {
+		if !ValidateWHMCSEpoch(w, r) {
+			return
+		}
+		var req struct {
+			DisplayName *string `json:"display_name"`
+		}
+		d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
+		d.DisallowUnknownFields()
+		if d.Decode(&req) != nil || req.DisplayName == nil || d.Decode(&struct{}{}) != io.EOF || !config.ValidContainerDisplayName(*req.DisplayName) {
+			jsonResponse(w, 400, APIResponse{Success: false, Message: "display_name must be a valid hostname or empty"})
+			return
+		}
+		if _, err := config.SetContainerDisplayName(c.UUID, *req.DisplayName); err != nil {
+			jsonResponse(w, 500, APIResponse{Success: false, Message: "Could not persist instance display name"})
+			return
+		}
+		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]string{"uuid": c.UUID, "name": c.Name, "display_name": *req.DisplayName}})
+		return
+	}
 	if parts[2] == "traffic-reset" {
 		if r.Method == "GET" {
 			data, err := lxcManager.WHMCSTrafficState(c.ID, r.URL.Query().Get("request_key"))

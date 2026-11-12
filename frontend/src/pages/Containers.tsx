@@ -45,6 +45,7 @@ import {
   deleteTask,
 } from '../services/api'
 import { actionLabel, taskStatusClass, taskStatusLabel } from '../utils/labels'
+import { containerDisplayName } from '../utils/containerName'
 
 export default function Containers() {
   const navigate = useNavigate()
@@ -539,14 +540,14 @@ export default function Containers() {
                       </TableCell>
                       <TableCell className="px-2.5 py-2 align-top">
                         <div className="flex min-w-0 items-center gap-2">
-                          <WorkloadIdentity runtime={container.virtualization} name={container.name} size="sm" />
+                          <WorkloadIdentity runtime={container.virtualization} name={containerDisplayName(container)} size="sm" />
                           <Button variant="link"
                             onClick={() => navigate(`/container/${encodeURIComponent(container.uuid || String(container.id))}`)}
                             disabled={isPlaceholder}
                             className="h-auto max-w-[180px] justify-start truncate p-0 text-xs font-medium"
-                            title={container.name}
+                            title={containerDisplayName(container)}
                           >
-                            <span className="truncate">{container.name}</span>
+                            <span className="truncate">{containerDisplayName(container)}</span>
                           </Button>
                         </div>
                       </TableCell>
@@ -690,6 +691,7 @@ export default function Containers() {
       {showTasks && (
         <TaskQueueModal
           tasks={tasks}
+          containers={containers}
           onRefresh={fetchTasks}
           onClose={() => setShowTasks(false)}
         />
@@ -942,6 +944,7 @@ function filterContainers(containers: DisplayContainer[], filters: ContainerFilt
     const fields = [
       String(container.id),
       container.name,
+      container.display_name || '',
       container.uuid,
       container.ip,
       container.ipv6,
@@ -1008,12 +1011,22 @@ function taskLineLabel(task: Task, actionLabels: Record<string, string>) {
   return actionLabels[task.type] || '处理中...'
 }
 
-function TaskQueueModal({ tasks, onRefresh, onClose }: {
+function TaskQueueModal({ tasks, containers, onRefresh, onClose }: {
   tasks: Task[]
+  containers: Container[]
   onRefresh: () => void | Promise<void>
   onClose: () => void
 }) {
   const { t } = useLanguage()
+  const containerLabels = new Map<string, string>()
+  for (const container of containers) {
+    const label = containerDisplayName(container)
+    containerLabels.set('name:' + container.name, label)
+    if (container.uuid) containerLabels.set('uuid:' + container.uuid, label)
+  }
+  const taskLabel = (task: Task) => (task.container_uuid
+    ? containerLabels.get('uuid:' + task.container_uuid)
+    : containerLabels.get('name:' + task.container_name)) || task.container_name
   return (
     <Modal title={t('任务队列')} description={t(`共 ${tasks.length} 个任务`)} onClose={onClose} size="6xl" flush className="max-h-[86vh]" extra={
       <Button variant="outline" onClick={onRefresh} className="h-auto gap-2 px-3 py-2 text-sm"><RefreshCw className="h-4 w-4" />{t('刷新')}</Button>
@@ -1043,7 +1056,7 @@ function TaskQueueModal({ tasks, onRefresh, onClose }: {
                       </Badge>
                     </TableCell>
                     <TableCell className="whitespace-nowrap px-4 py-2.5 text-foreground">{t(actionLabel(task.type))}</TableCell>
-                    <TableCell className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-foreground">{task.container_name}</TableCell>
+                    <TableCell className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-foreground">{taskLabel(task)}</TableCell>
                     <TableCell className="min-w-[210px] px-4 py-2.5 text-xs text-foreground">
                       {task.type === 'create' ? t(task.stage_detail || (task.status === 'pending' ? '排队等待' : '-')) : '-'}
                     </TableCell>

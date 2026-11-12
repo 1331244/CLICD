@@ -26,6 +26,7 @@ import api, { APIResponse, Container } from '../services/api'
 import { useLanguage } from '../contexts/LanguageContext'
 import { copyToClipboard } from '../utils/clipboard'
 import { useDialog } from '../components/Dialog'
+import { containerDisplayName } from '../utils/containerName'
 
 interface ApiKeyItem {
   id: string
@@ -282,7 +283,7 @@ export default function ApiIntegration() {
 
   const containerNameByUUID = useMemo(() => {
     const map = new Map<string, string>()
-    containers.forEach(c => map.set(c.uuid, c.name))
+    containers.forEach(c => map.set(c.uuid, containerDisplayName(c)))
     return map
   }, [containers])
 
@@ -672,7 +673,7 @@ export default function ApiIntegration() {
                             onCheckedChange={() => toggleContainer(container.uuid)}
                             className="h-4 w-4"
                           />
-                          <span className="min-w-0 truncate">{container.name}</span>
+                          <span className="min-w-0 truncate">{containerDisplayName(container)}</span>
                           <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{container.uuid.slice(0, 8)}</span>
                         </Label>
                       ))}

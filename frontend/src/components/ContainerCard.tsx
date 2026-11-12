@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { Container, startContainer, stopContainer, restartContainer, deleteContainer } from '../services/api'
+import { containerDisplayName } from '../utils/containerName'
 
 interface ContainerCardProps {
   container: Container
@@ -24,6 +25,7 @@ export default function ContainerCard({ container, onRefresh }: ContainerCardPro
   const navigate = useNavigate()
   const dialog = useDialog()
   const containerIdentifier = container.uuid || container.id
+  const displayName = containerDisplayName(container)
 
   const handleAction = async (action: string) => {
     try {
@@ -38,7 +40,7 @@ export default function ContainerCard({ container, onRefresh }: ContainerCardPro
           await restartContainer(containerIdentifier)
           break
         case 'delete':
-          if (await dialog.confirm('删除容器', `确定要删除容器 ${container.name} 吗？此操作不可撤销。`)) {
+          if (await dialog.confirm('删除容器', `确定要删除容器 ${displayName} 吗？此操作不可撤销。`)) {
             await deleteContainer(containerIdentifier)
           } else {
             return
@@ -60,14 +62,14 @@ export default function ContainerCard({ container, onRefresh }: ContainerCardPro
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex min-w-0 items-center gap-3">
-          <WorkloadIdentity runtime={container.virtualization} name={container.name} />
+          <WorkloadIdentity runtime={container.virtualization} name={displayName} />
           <div className="min-w-0">
             <Button variant="link"
               onClick={() => navigate(`/container/${encodeURIComponent(String(containerIdentifier))}`)}
               className="h-auto max-w-full justify-start truncate p-0 text-left font-semibold"
-              title={container.name}
+              title={displayName}
             >
-              <span className="truncate">{container.name}</span>
+              <span className="truncate">{displayName}</span>
             </Button>
             <div className="mt-1">
               <WorkloadStatus state={statusState} label={statusText} loading={statusState === 'pending'} />

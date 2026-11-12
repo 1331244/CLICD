@@ -79,6 +79,7 @@ export interface Container {
   id: number
   uuid: string
   name: string
+  display_name?: string
   virtualization?: string
   storage_pool_id?: string
   storage_path?: string

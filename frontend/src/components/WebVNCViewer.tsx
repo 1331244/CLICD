@@ -39,10 +39,11 @@ function resolveRFBConstructor(moduleValue: unknown): RFBConstructor {
 
 interface WebVNCViewerProps {
   containerName: string
+  displayName?: string
   onClose: () => void
 }
 
-export default function WebVNCViewer({ containerName, onClose }: WebVNCViewerProps) {
+export default function WebVNCViewer({ containerName, displayName, onClose }: WebVNCViewerProps) {
   const screenRef = useRef<HTMLDivElement>(null)
   const rfbRef = useRef<RFBInstance | null>(null)
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting')
@@ -170,7 +171,7 @@ export default function WebVNCViewer({ containerName, onClose }: WebVNCViewerPro
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border bg-muted px-4 py-2.5">
         <div className="flex w-full min-w-0 items-center gap-2 sm:w-auto sm:flex-1">
           <Monitor className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground" title={`WebVNC - ${containerName}`}>WebVNC - {containerName}</span>
+          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground" title={`WebVNC - ${displayName || containerName}`}>WebVNC - {displayName || containerName}</span>
           {status === 'connected' && <Badge variant="secondary" className="shrink-0 whitespace-nowrap px-1.5 py-0.5 text-xs">已连接</Badge>}
           {status === 'connecting' && <Badge variant="secondary" className="shrink-0 whitespace-nowrap px-1.5 py-0.5 text-xs">连接中...</Badge>}
           {status === 'disconnected' && <Badge variant="secondary" className="shrink-0 whitespace-nowrap px-1.5 py-0.5 text-xs">已断开</Badge>}

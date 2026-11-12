@@ -195,6 +195,7 @@ func ensureSchema() error {
 			id INTEGER PRIMARY KEY,
 			uuid TEXT NOT NULL UNIQUE,
 			name TEXT NOT NULL,
+			display_name TEXT NOT NULL DEFAULT '',
 			virtualization TEXT,
 			lxc_name TEXT,
 			kvm_name TEXT,
@@ -479,6 +480,7 @@ func ensureSchemaMigrations() error {
 		{"sub_users", "allowed_image_ids", "TEXT"},
 		{"sub_users", "image_limit_configured", "INTEGER NOT NULL DEFAULT 0"},
 		{"containers", "network_down_mbps", "INTEGER NOT NULL DEFAULT 0"},
+		{"containers", "display_name", "TEXT NOT NULL DEFAULT ''"},
 		{"containers", "network_up_mbps", "INTEGER NOT NULL DEFAULT 0"},
 		{"containers", "io_read_mbps", "INTEGER NOT NULL DEFAULT 0"},
 		{"containers", "io_write_mbps", "INTEGER NOT NULL DEFAULT 0"},
@@ -847,8 +849,8 @@ func saveContainers(tx *sql.Tx) error {
 			snapshot_schedule_last_run, snapshot_schedule_next_run, snapshot_schedule_created_by,
 			firewall_enabled, firewall_default_action, firewall_rules, allowed_image_ids, image_limit_configured,
 			ipv6_nat_address, ipv6_port_mappings, ipv6_nat_sync_ipv4, ipv6_port_mapping_limit,
-			manual_install, installation_media_image_id, installation_media_boot, data_disks, standalone
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			manual_install, installation_media_image_id, installation_media_boot, data_disks, standalone, display_name
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			c.ID, c.UUID, c.Name, c.Virtualization, c.LXCName, c.KVMName, c.DiskImage, c.StoragePoolID, c.StoragePath, c.MACAddress, c.Template,
 			c.VCPU, c.RAMMB, c.DiskGB, c.NetworkBWMbps, c.NetworkDownMbps, c.NetworkUpMbps,
 			c.MonthlyTrafficGB, c.TrafficMode, c.TrafficInGB,
@@ -861,7 +863,7 @@ func saveContainers(tx *sql.Tx) error {
 			c.SnapshotScheduleLastRun, c.SnapshotScheduleNextRun, c.SnapshotScheduleCreatedBy,
 			boolInt(c.FirewallEnabled), normalizeFirewallDefaultAction(c.FirewallDefaultAction), marshalFirewallRules(c.FirewallRules), allowedImageIDs, boolInt(c.ImageLimitConfigured),
 			c.IPv6NATAddress, marshalIPv6PortMappings(c.IPv6PortMappings), boolPtrInt(c.IPv6NATSyncIPv4), c.IPv6PortMappingLimit,
-			boolInt(c.ManualInstall), c.InstallationMediaImageID, c.InstallationMediaBoot, string(dataDisks), boolInt(c.Standalone),
+			boolInt(c.ManualInstall), c.InstallationMediaImageID, c.InstallationMediaBoot, string(dataDisks), boolInt(c.Standalone), c.DisplayName,
 		); err != nil {
 			return err
 		}
@@ -1027,7 +1029,7 @@ func loadContainers() ([]Container, error) {
 		snapshot_schedule_last_run, snapshot_schedule_next_run, snapshot_schedule_created_by,
 		firewall_enabled, firewall_default_action, firewall_rules, allowed_image_ids, image_limit_configured,
 			ipv6_nat_address, ipv6_port_mappings, ipv6_nat_sync_ipv4, ipv6_port_mapping_limit,
-		manual_install, installation_media_image_id, installation_media_boot, data_disks, standalone
+		manual_install, installation_media_image_id, installation_media_boot, data_disks, standalone, display_name
 		FROM containers ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -1059,7 +1061,7 @@ func loadContainers() ([]Container, error) {
 			&c.SnapshotScheduleLastRun, &c.SnapshotScheduleNextRun, &c.SnapshotScheduleCreatedBy,
 			&firewallEnabled, &firewallDefaultAction, &firewallRulesJSON, &allowedImageIDs, &imageLimitConfigured,
 			&c.IPv6NATAddress, &ipv6PortMappingsJSON, &ipv6NATSyncIPv4, &c.IPv6PortMappingLimit,
-			&manualInstall, &c.InstallationMediaImageID, &c.InstallationMediaBoot, &dataDisksJSON, &standalone,
+			&manualInstall, &c.InstallationMediaImageID, &c.InstallationMediaBoot, &dataDisksJSON, &standalone, &c.DisplayName,
 		); err != nil {
 			return nil, err
 		}
