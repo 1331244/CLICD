@@ -50,6 +50,13 @@ func validateCreateSSHAuth(cfg lxc.ContainerConfig) error {
 	return err
 }
 
+func validateCreateSystemHostname(cfg lxc.ContainerConfig) error {
+	if cfg.SystemHostname != "" && (cfg.Virtualization != config.VirtualizationLXC || !config.ValidSystemHostname(cfg.SystemHostname)) {
+		return fmt.Errorf("system_hostname must be a valid Linux hostname for an LXC container")
+	}
+	return nil
+}
+
 func validateReinstallSSHAuth(c *config.Container, templateID string, cfg lxc.ContainerConfig) error {
 	if c != nil && c.IsKVM() && (kvm.IsWindowsImage(templateID) || kvm.IsManualISOImage(templateID) || kvm.IsManualDiskImage(templateID)) {
 		return nil

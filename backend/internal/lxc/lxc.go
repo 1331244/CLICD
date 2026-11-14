@@ -230,6 +230,7 @@ func NewManager() *Manager {
 // ContainerConfig defines container creation parameters
 type ContainerConfig struct {
 	Name                   string                     `json:"name"`
+	SystemHostname         string                     `json:"system_hostname,omitempty"`
 	Virtualization         string                     `json:"virtualization,omitempty"`
 	TemplateID             string                     `json:"template_id"`
 	StoragePoolID          string                     `json:"storage_pool_id,omitempty"`
@@ -577,6 +578,9 @@ func (cfg ContainerConfig) WantsLANIPv4() bool {
 // CreateContainer creates a new LXC container. Uses ct-{id} as LXC name internally.
 func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 	cfg.NormalizeResourceAliases()
+	if cfg.SystemHostname != "" && !config.ValidSystemHostname(cfg.SystemHostname) {
+		return fmt.Errorf("invalid system hostname")
+	}
 	cfg.ReportProgress("preparing", "检查模板与创建参数")
 	tmpl := FindTemplate(cfg.TemplateID)
 	if tmpl == nil {
@@ -738,6 +742,7 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 		ID:                     id,
 		UUID:                   config.NewContainerUUID(),
 		Name:                   cfg.Name,
+		SystemHostname:         cfg.SystemHostname,
 		Virtualization:         config.VirtualizationLXC,
 		LXCName:                lxcName,
 		StoragePoolID:          storagePoolID,
@@ -2241,12 +2246,12 @@ func (m *Manager) StartContainer(id int) error {
 	if err := m.PrepareDataDisks(&initialIPv6); err != nil {
 		return err
 	}
-	logFile, consoleLog, output, err := m.startLXCContainerDaemon(lxcName)
+	logFile, consoleLog, output, err := m.startLXCContainerDaemon(lxcName, c.SystemHostname)
 	if err != nil {
 		config.UpdateContainerStatus(id, "stopped")
 		return fmt.Errorf("failed to start container: %v, output: %s, lxc log: %s, console: %s", err, string(output), tailFile(logFile, 80), tailFile(consoleLog, 80))
 	}
-	if err := m.waitForLXCStartup(lxcName, logFile, consoleLog); err != nil {
+	if err := m.waitForLXCStartup(lxcName, logFile, consoleLog, c.SystemHostname); err != nil {
 		config.UpdateContainerStatus(id, "stopped")
 		return err
 	}
@@ -2307,7 +2312,12 @@ func (m *Manager) StartContainer(id int) error {
 	return nil
 }
 
-func (m *Manager) startLXCContainerDaemon(lxcName string) (string, string, []byte, error) {
+func (m *Manager) startLXCContainerDaemon(lxcName, systemHostname string) (string, string, []byte, error) {
+	if systemHostname != "" {
+		if err := m.writeSystemHostname(lxcName, systemHostname); err != nil {
+			return "", "", nil, err
+		}
+	}
 	for i := range config.AppConfig.Containers {
 		c := &config.AppConfig.Containers[i]
 		if c.LxcName() == lxcName {
@@ -2326,7 +2336,7 @@ func (m *Manager) startLXCContainerDaemon(lxcName string) (string, string, []byt
 	return logFile, consoleLog, output, err
 }
 
-func (m *Manager) waitForLXCStartup(lxcName, logFile, consoleLog string) error {
+func (m *Manager) waitForLXCStartup(lxcName, logFile, consoleLog, systemHostname string) error {
 	runningChecks := 0
 	lastStatus := "unknown"
 	for retry := 0; retry < 10; retry++ {
@@ -2340,6 +2350,13 @@ func (m *Manager) waitForLXCStartup(lxcName, logFile, consoleLog string) error {
 		if status == "running" {
 			runningChecks++
 			if runningChecks >= 3 {
+				if systemHostname != "" {
+					ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+					defer cancel()
+					if err := m.setRunningHostname(ctx, lxcName, systemHostname); err != nil {
+						return err
+					}
+				}
 				return nil
 			}
 			continue
@@ -3854,14 +3871,14 @@ func (m *Manager) ReinstallContainer(id int, templateID string, authConfig ...Co
 	if err := m.PrepareDataDisks(&dataDiskSnapshot); err != nil {
 		return err
 	}
-	logFile, consoleLog, output, err := m.startLXCContainerDaemon(lxcName)
+	logFile, consoleLog, output, err := m.startLXCContainerDaemon(lxcName, c.SystemHostname)
 	if err != nil {
 		fmt.Printf("Warning: failed to start container after reinstall: %v\n", err)
 		c.Status = "stopped"
 		config.SaveConfig()
 		return fmt.Errorf("reinstalled but failed to start: %v, output: %s, lxc log: %s, console: %s", err, string(output), tailFile(logFile, 80), tailFile(consoleLog, 80))
 	}
-	if err := m.waitForLXCStartup(lxcName, logFile, consoleLog); err != nil {
+	if err := m.waitForLXCStartup(lxcName, logFile, consoleLog, c.SystemHostname); err != nil {
 		c.Status = "stopped"
 		config.SaveConfig()
 		return fmt.Errorf("reinstalled but container did not stay running: %v", err)

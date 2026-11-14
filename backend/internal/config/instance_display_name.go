@@ -28,9 +28,25 @@ func ValidContainerDisplayName(name string) bool {
 	return true
 }
 
+// ValidSystemHostname additionally checks the Linux UTS name length.
+func ValidSystemHostname(name string) bool {
+	return name != "" && len(name) <= 64 && ValidContainerDisplayName(name)
+}
+
 // SetContainerDisplayName persists only the independent panel label. The old
 // in-memory value is restored if SQLite cannot commit the configuration.
 func SetContainerDisplayName(uuid, name string) (bool, error) {
+	return setContainerHostnames(uuid, name, nil)
+}
+
+func SetContainerHostnames(uuid, name, systemHostname string) (bool, error) {
+	if !ValidSystemHostname(systemHostname) {
+		return false, fmt.Errorf("invalid system hostname")
+	}
+	return setContainerHostnames(uuid, name, &systemHostname)
+}
+
+func setContainerHostnames(uuid, name string, systemHostname *string) (bool, error) {
 	if !ValidContainerDisplayName(name) {
 		return false, fmt.Errorf("invalid instance display hostname")
 	}
@@ -40,13 +56,16 @@ func SetContainerDisplayName(uuid, name string) (bool, error) {
 	if c == nil {
 		return false, fmt.Errorf("instance not found")
 	}
-	if c.DisplayName == name {
+	if c.DisplayName == name && (systemHostname == nil || c.SystemHostname == *systemHostname) {
 		return false, nil
 	}
-	previous := c.DisplayName
+	previousName, previousSystemHostname := c.DisplayName, c.SystemHostname
 	c.DisplayName = name
+	if systemHostname != nil {
+		c.SystemHostname = *systemHostname
+	}
 	if err := SaveConfig(); err != nil {
-		c.DisplayName = previous
+		c.DisplayName, c.SystemHostname = previousName, previousSystemHostname
 		return false, err
 	}
 	return true, nil

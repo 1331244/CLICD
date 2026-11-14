@@ -107,6 +107,11 @@ func TestWHMCSInstanceDisplayNameContract(t *testing.T) {
 	expect(request(http.MethodPut, "77", []byte(`{"display_name":"forged"}`), admin, ""), 404)
 	expect(request(http.MethodPut, "missing-uuid", []byte(`{"display_name":"forged"}`), admin, ""), 404)
 	expect(request(http.MethodPut, "other-runtime-uuid", []byte(`{"display_name":"forged"}`), admin, ""), 409)
+	expect(request(http.MethodPut, before.UUID, []byte(`{"display_name":"ignored","system_hostname":"bad_name"}`), admin, ""), 400)
+	expect(request(http.MethodPut, before.UUID, []byte(`{"display_name":"newName","system_hostname":"newName"}`), admin, ""), 503)
+	if c := config.FindContainerByUUID(before.UUID); c.DisplayName != "vm77.example.invalid" || c.SystemHostname != "" {
+		t.Fatal("unavailable guest was reported as synchronized")
+	}
 	expect(request(http.MethodGet, before.UUID, nil, admin, ""), 404)
 	for _, body := range []string{`{`, `{}`, `{"display_name":null}`, `{"display_name":1}`, `{"display_name":"valid","name":"forged"}`, `{"display_name":"valid"}{}`, `{"display_name":"` + strings.Repeat("a", 3000) + `"}`} {
 		expect(request(http.MethodPut, before.UUID, []byte(body), admin, ""), 400)
@@ -143,6 +148,9 @@ func TestWHMCSInstanceDisplayNameContract(t *testing.T) {
 	HandleWHMCS(capabilities, withAuthContext(httptest.NewRequest(http.MethodGet, "/api/v1/whmcs/capabilities", nil), *admin))
 	if !strings.Contains(capabilities.Body.String(), `"instance_display_name":true`) {
 		t.Fatal("display-name capability missing")
+	}
+	if !strings.Contains(capabilities.Body.String(), `"instance_system_hostname":true`) {
+		t.Fatal("system hostname capability missing")
 	}
 	list := httptest.NewRecorder()
 	listContainers(list, withAuthContext(httptest.NewRequest(http.MethodGet, "/api/v1/containers", nil), *admin))

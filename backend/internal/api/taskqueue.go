@@ -909,6 +909,10 @@ func HandleBatchCreate(w http.ResponseWriter, r *http.Request) {
 		}
 		req.Containers[i].NormalizeResourceAliases()
 		req.Containers[i].Virtualization = runtimeFromRequest(req.Containers[i].Virtualization)
+		if err := validateCreateSystemHostname(req.Containers[i]); err != nil {
+			jsonResponse(w, http.StatusBadRequest, APIResponse{Success: false, Message: name + ": " + err.Error()})
+			return
+		}
 		if req.Containers[i].WantsLANIPv4() && req.Containers[i].Virtualization != config.VirtualizationLXC {
 			jsonResponse(w, http.StatusBadRequest, APIResponse{Success: false, Message: name + ": LAN IPv4 is only supported for LXC containers"})
 			return

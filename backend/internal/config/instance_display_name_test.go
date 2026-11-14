@@ -92,3 +92,37 @@ func TestInstanceDisplayNameHostnameValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemHostnameSurvivesConfigReload(t *testing.T) {
+	setupHistoryStore(t)
+	const uuid = "managed-hostname-uuid"
+	AppConfig.Containers = []Container{{ID: 1, UUID: uuid, Name: "reserved-name", LXCName: "ct-1", Virtualization: "lxc", DisplayName: "OldName"}}
+	if err := SaveConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`ALTER TABLE containers DROP COLUMN system_hostname`); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureSchemaMigrations(); err != nil {
+		t.Fatal(err)
+	}
+	legacy, ok, err := loadConfigFromDB()
+	if err != nil || !ok || legacy.Containers[0].SystemHostname != "" {
+		t.Fatalf("legacy record did not retain an unmanaged system name: %v", err)
+	}
+	AppConfig = legacy
+	if changed, err := SetContainerHostnames(uuid, "NewName", "NewName"); err != nil || !changed {
+		t.Fatalf("apply the two names: %v %v", changed, err)
+	}
+	if _, err := SetContainerDisplayName(uuid, "PanelLabel"); err != nil {
+		t.Fatal(err)
+	}
+	loaded, ok, err := loadConfigFromDB()
+	if err != nil || !ok {
+		t.Fatalf("reload config: %v", err)
+	}
+	c := loaded.Containers[0]
+	if c.SystemHostname != "NewName" || c.DisplayName != "PanelLabel" || c.Name != "reserved-name" || c.LXCName != "ct-1" || c.UUID != uuid {
+		t.Fatalf("reloaded wrong hostnames or identity: %+v", c)
+	}
+}

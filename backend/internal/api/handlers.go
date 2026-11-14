@@ -344,6 +344,10 @@ func createContainer(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: err.Error()})
 		return
 	}
+	if err := validateCreateSystemHostname(cfg); err != nil {
+		jsonResponse(w, http.StatusBadRequest, APIResponse{Success: false, Message: err.Error()})
+		return
+	}
 	if err := validateCreateSSHAuth(cfg); err != nil {
 		jsonResponse(w, http.StatusBadRequest, APIResponse{Success: false, Message: err.Error()})
 		return

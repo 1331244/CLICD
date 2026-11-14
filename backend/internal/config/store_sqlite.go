@@ -21,6 +21,7 @@ var (
 
 type savedTaskConfig struct {
 	Name                   string        `json:"name"`
+	SystemHostname         string        `json:"system_hostname,omitempty"`
 	Virtualization         string        `json:"virtualization,omitempty"`
 	TemplateID             string        `json:"template_id"`
 	StoragePoolID          string        `json:"storage_pool_id,omitempty"`
@@ -196,6 +197,7 @@ func ensureSchema() error {
 			uuid TEXT NOT NULL UNIQUE,
 			name TEXT NOT NULL,
 			display_name TEXT NOT NULL DEFAULT '',
+			system_hostname TEXT NOT NULL DEFAULT '',
 			virtualization TEXT,
 			lxc_name TEXT,
 			kvm_name TEXT,
@@ -342,6 +344,7 @@ func ensureSchema() error {
 			ip TEXT,
 			user_agent TEXT,
 			cfg_name TEXT,
+			cfg_system_hostname TEXT NOT NULL DEFAULT '',
 			cfg_virtualization TEXT,
 			cfg_template_id TEXT,
 			cfg_vcpu REAL,
@@ -472,6 +475,7 @@ func ensureSchemaMigrations() error {
 		{"tasks", "cfg_ssh_auth_mode", "TEXT"},
 		{"tasks", "cfg_ssh_password", "TEXT"},
 		{"tasks", "cfg_ssh_public_key", "TEXT"},
+		{"tasks", "cfg_system_hostname", "TEXT NOT NULL DEFAULT ''"},
 		{"tasks", "cfg_allowed_image_ids", "TEXT"},
 		{"tasks", "cfg_image_limit_configured", "INTEGER NOT NULL DEFAULT 0"},
 		{"port_mappings", "host_ip", "TEXT"},
@@ -481,6 +485,7 @@ func ensureSchemaMigrations() error {
 		{"sub_users", "image_limit_configured", "INTEGER NOT NULL DEFAULT 0"},
 		{"containers", "network_down_mbps", "INTEGER NOT NULL DEFAULT 0"},
 		{"containers", "display_name", "TEXT NOT NULL DEFAULT ''"},
+		{"containers", "system_hostname", "TEXT NOT NULL DEFAULT ''"},
 		{"containers", "network_up_mbps", "INTEGER NOT NULL DEFAULT 0"},
 		{"containers", "io_read_mbps", "INTEGER NOT NULL DEFAULT 0"},
 		{"containers", "io_write_mbps", "INTEGER NOT NULL DEFAULT 0"},
@@ -849,8 +854,8 @@ func saveContainers(tx *sql.Tx) error {
 			snapshot_schedule_last_run, snapshot_schedule_next_run, snapshot_schedule_created_by,
 			firewall_enabled, firewall_default_action, firewall_rules, allowed_image_ids, image_limit_configured,
 			ipv6_nat_address, ipv6_port_mappings, ipv6_nat_sync_ipv4, ipv6_port_mapping_limit,
-			manual_install, installation_media_image_id, installation_media_boot, data_disks, standalone, display_name
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			manual_install, installation_media_image_id, installation_media_boot, data_disks, standalone, display_name, system_hostname
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			c.ID, c.UUID, c.Name, c.Virtualization, c.LXCName, c.KVMName, c.DiskImage, c.StoragePoolID, c.StoragePath, c.MACAddress, c.Template,
 			c.VCPU, c.RAMMB, c.DiskGB, c.NetworkBWMbps, c.NetworkDownMbps, c.NetworkUpMbps,
 			c.MonthlyTrafficGB, c.TrafficMode, c.TrafficInGB,
@@ -863,7 +868,7 @@ func saveContainers(tx *sql.Tx) error {
 			c.SnapshotScheduleLastRun, c.SnapshotScheduleNextRun, c.SnapshotScheduleCreatedBy,
 			boolInt(c.FirewallEnabled), normalizeFirewallDefaultAction(c.FirewallDefaultAction), marshalFirewallRules(c.FirewallRules), allowedImageIDs, boolInt(c.ImageLimitConfigured),
 			c.IPv6NATAddress, marshalIPv6PortMappings(c.IPv6PortMappings), boolPtrInt(c.IPv6NATSyncIPv4), c.IPv6PortMappingLimit,
-			boolInt(c.ManualInstall), c.InstallationMediaImageID, c.InstallationMediaBoot, string(dataDisks), boolInt(c.Standalone), c.DisplayName,
+			boolInt(c.ManualInstall), c.InstallationMediaImageID, c.InstallationMediaBoot, string(dataDisks), boolInt(c.Standalone), c.DisplayName, c.SystemHostname,
 		); err != nil {
 			return err
 		}
@@ -953,8 +958,8 @@ func saveTasksDB(tx *sql.Tx) error {
 			cfg_lan_ipv4_address, cfg_lan_ipv4_prefix_len, cfg_lan_ipv4_gateway, cfg_snapshot_limit,
 			cfg_assign_ipv4, cfg_ipv4_count, cfg_public_ipv4s, cfg_assign_ipv6, cfg_ipv6_count, cfg_ipv6_addresses,
 			cfg_ssh_auth_mode, cfg_ssh_password, cfg_ssh_public_key, cfg_allowed_image_ids, cfg_image_limit_configured, cfg_expires_at,
-			cfg_ipv6_port_mapping_count, cfg_ipv6_nat_sync_ipv4
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cfg_ipv6_port_mapping_count, cfg_ipv6_nat_sync_ipv4, cfg_system_hostname
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			task.ID, task.Type, task.ContainerID, task.ContainerName, task.Status, task.Error, task.CreatedAt, task.TemplateID, task.User, task.IP, task.UserAgent,
 			cfg.Name, cfg.Virtualization, cfg.TemplateID, cfg.VCPU, cfg.CPUPercent, cfg.RAMMB, cfg.DiskGB,
 			cfg.NetworkBWMbps, cfg.NetworkDownMbps, cfg.NetworkUpMbps,
@@ -965,7 +970,7 @@ func saveTasksDB(tx *sql.Tx) error {
 			boolInt(cfg.AssignIPv4), cfg.IPv4Count, encodeStringSlice(cfg.PublicIPv4s),
 			boolInt(cfg.AssignIPv6), cfg.IPv6Count, encodeStringSlice(cfg.IPv6Addresses),
 			cfg.SSHAuthMode, cfg.SSHPassword, cfg.SSHPublicKey, encodeStringSlice(cfg.AllowedImageIDs), boolInt(cfg.ImageLimitConfigured), cfg.ExpiresAt,
-			cfg.IPv6PortMappingCount, boolPtrInt(cfg.IPv6NATSyncIPv4),
+			cfg.IPv6PortMappingCount, boolPtrInt(cfg.IPv6NATSyncIPv4), cfg.SystemHostname,
 		); err != nil {
 			return err
 		}
@@ -1029,7 +1034,7 @@ func loadContainers() ([]Container, error) {
 		snapshot_schedule_last_run, snapshot_schedule_next_run, snapshot_schedule_created_by,
 		firewall_enabled, firewall_default_action, firewall_rules, allowed_image_ids, image_limit_configured,
 			ipv6_nat_address, ipv6_port_mappings, ipv6_nat_sync_ipv4, ipv6_port_mapping_limit,
-		manual_install, installation_media_image_id, installation_media_boot, data_disks, standalone, display_name
+		manual_install, installation_media_image_id, installation_media_boot, data_disks, standalone, display_name, system_hostname
 		FROM containers ORDER BY id`)
 	if err != nil {
 		return nil, err
@@ -1061,7 +1066,7 @@ func loadContainers() ([]Container, error) {
 			&c.SnapshotScheduleLastRun, &c.SnapshotScheduleNextRun, &c.SnapshotScheduleCreatedBy,
 			&firewallEnabled, &firewallDefaultAction, &firewallRulesJSON, &allowedImageIDs, &imageLimitConfigured,
 			&c.IPv6NATAddress, &ipv6PortMappingsJSON, &ipv6NATSyncIPv4, &c.IPv6PortMappingLimit,
-			&manualInstall, &c.InstallationMediaImageID, &c.InstallationMediaBoot, &dataDisksJSON, &standalone, &c.DisplayName,
+			&manualInstall, &c.InstallationMediaImageID, &c.InstallationMediaBoot, &dataDisksJSON, &standalone, &c.DisplayName, &c.SystemHostname,
 		); err != nil {
 			return nil, err
 		}
@@ -1305,7 +1310,7 @@ func loadTasks() ([]SavedTask, error) {
 		cfg_lan_ipv4_address, cfg_lan_ipv4_prefix_len, cfg_lan_ipv4_gateway, cfg_snapshot_limit,
 		cfg_assign_ipv4, cfg_ipv4_count, cfg_public_ipv4s, cfg_assign_ipv6, cfg_ipv6_count, cfg_ipv6_addresses,
 		cfg_ssh_auth_mode, cfg_ssh_password, cfg_ssh_public_key, cfg_allowed_image_ids, cfg_image_limit_configured, cfg_expires_at,
-			cfg_ipv6_port_mapping_count, cfg_ipv6_nat_sync_ipv4
+			cfg_ipv6_port_mapping_count, cfg_ipv6_nat_sync_ipv4, cfg_system_hostname
 		FROM tasks ORDER BY created_at, id`)
 	if err != nil {
 		return nil, err
@@ -1330,7 +1335,7 @@ func loadTasks() ([]SavedTask, error) {
 			&lanIPv4Address, &lanIPv4PrefixLen, &lanIPv4Gateway, &cfg.SnapshotLimit,
 			&assignIPv4, &ipv4Count, &publicIPv4s, &assignIPv6, &ipv6Count, &ipv6Addresses,
 			&sshAuthMode, &sshPassword, &sshPublicKey, &allowedImageIDs, &imageLimitConfigured, &cfg.ExpiresAt,
-			&cfg.IPv6PortMappingCount, &ipv6NATSyncIPv4,
+			&cfg.IPv6PortMappingCount, &ipv6NATSyncIPv4, &cfg.SystemHostname,
 		); err != nil {
 			return nil, err
 		}
