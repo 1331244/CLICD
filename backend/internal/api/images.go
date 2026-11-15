@@ -26,7 +26,7 @@ import (
 type ImageInfo struct {
 	ID              string  `json:"id"`
 	Name            string  `json:"name"`
-	Proxmox         bool    `json:"proxmox,omitempty"`
+	Retired         bool    `json:"retired,omitempty"`
 	Type            string  `json:"type"`
 	Distro          string  `json:"distro"`
 	Release         string  `json:"release"`
@@ -184,7 +184,7 @@ func enqueueLXCImageDownload(tmpl lxc.Template) (queued bool, ok bool) {
 	}
 
 	startStage := "lxc-create"
-	if tmpl.Custom || tmpl.Proxmox != nil {
+	if tmpl.Custom {
 		startStage = "downloading"
 	}
 
@@ -258,7 +258,7 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 		lxcActiveDownload = nextTask
 		if nextTask != nil {
 			stage := "lxc-create"
-			if nextTask.template.Custom || nextTask.template.Proxmox != nil {
+			if nextTask.template.Custom {
 				stage = "downloading"
 			}
 			updateImageDownload(nextTask.template.ID, func(st *imageDownloadStatus) {
@@ -269,19 +269,7 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 		lxcDownloadQueueMu.Unlock()
 	}()
 
-	if tmpl.Proxmox != nil {
-		pool, err := selectLXCImageDownloadPool(tmpl)
-		if err != nil {
-			finishImageDownload(tmpl.ID, err)
-			return
-		}
-		current, err := filepath.EvalSymlinks(lxcImageCachePath)
-		if err != nil || current != filepath.Join(pool.Path, "images", "lxc") {
-			finishImageDownload(tmpl.ID, fmt.Errorf("LXC image cache storage changed, retry the download"))
-			return
-		}
-	}
-	if tmpl.Custom || tmpl.Proxmox != nil {
+	if tmpl.Custom {
 		err := lxc.DownloadRootfsArchiveWithProgress(ctx, tmpl, func(progress lxc.CustomImageDownloadProgress) {
 			updateImageDownload(tmpl.ID, func(status *imageDownloadStatus) {
 				status.Stage = progress.Stage
@@ -411,13 +399,8 @@ func officialLXCImageCachePath(templateID string) (string, bool) {
 }
 
 func lxcTemplateDownloadedInfo(template lxc.Template) (bool, int64) {
-	if template.Custom {
-		return lxc.RootfsArchiveDownloadedInfo(template.ID)
-	}
-	if template.Proxmox != nil {
-		if downloaded, size := lxc.RootfsArchiveDownloadedInfo(template.ID); downloaded {
-			return true, size
-		}
+	if downloaded, size := lxc.RootfsArchiveDownloadedInfo(template.ID); downloaded || template.Custom {
+		return downloaded, size
 	}
 	return imageDownloadedInfo(template.ID)
 }
@@ -427,7 +410,7 @@ func lxcTemplateDownloadedInfo(template lxc.Template) (bool, int64) {
 func getEnabledImageSet() map[string]bool {
 	set := make(map[string]bool)
 	if len(config.AppConfig.EnabledImages) == 0 {
-		for _, t := range lxc.GetTemplates() {
+		for _, t := range lxc.KnownTemplates() {
 			set[t.ID] = true
 		}
 		for _, t := range kvm.GetImages() {
@@ -455,7 +438,7 @@ func HandleImages(w http.ResponseWriter, r *http.Request) {
 	cleanupOldImageDownloadErrors()
 	kvmAvailable := hostKVMAvailable()
 
-	templates := lxc.GetTemplates()
+	templates := lxc.KnownTemplates()
 	kvmImages := []kvm.Image{}
 	if kvmAvailable {
 		kvmImages = kvm.GetImages()
@@ -464,13 +447,13 @@ func HandleImages(w http.ResponseWriter, r *http.Request) {
 	for _, t := range templates {
 		dl := imageDownloadInfo(t.ID)
 		downloaded, size := lxcTemplateDownloadedInfo(t)
-		if !downloaded && t.Proxmox != nil {
-			size = t.Proxmox.SizeBytes
+		if t.Retired && !downloaded {
+			continue
 		}
 		images = append(images, ImageInfo{
 			ID:              t.ID,
 			Name:            t.Name,
-			Proxmox:         t.Proxmox != nil,
+			Retired:         t.Retired,
 			Type:            config.VirtualizationLXC,
 			Distro:          t.Distro,
 			Release:         t.Release,
@@ -806,6 +789,10 @@ func HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tmpl := lxc.FindTemplate(req.TemplateID)
+	if tmpl != nil && tmpl.Retired {
+		jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: "This LXC template is retired from the download catalog"})
+		return
+	}
 	if tmpl == nil {
 		image := kvm.FindImage(req.TemplateID)
 		if image == nil {
@@ -867,7 +854,7 @@ func HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	imagePool, err := selectLXCImageDownloadPool(*tmpl)
+	imagePool, err := config.SelectStoragePoolForContent(config.StorageContentImages, "", dirSizeBytes(lxcImageCachePath)+1024*1024*1024)
 	if err != nil {
 		jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: err.Error()})
 		return
@@ -889,28 +876,6 @@ func HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(w, http.StatusAccepted, APIResponse{Success: true, Message: "Download started"})
-}
-
-func selectLXCImageDownloadPool(template lxc.Template) (*config.StoragePool, error) {
-	required := int64(1024 * 1024 * 1024)
-	if template.Proxmox != nil {
-		required = template.Proxmox.SizeBytes
-		// Existing cache files already count against free space on their disk.
-		// Include their size only when a move to a different pool is necessary.
-		if current, err := filepath.EvalSymlinks(lxcImageCachePath); err == nil {
-			for _, pool := range config.StoragePoolsForContent(config.StorageContentImages) {
-				if current != filepath.Join(pool.Path, "images", "lxc") {
-					continue
-				}
-				selected, err := config.SelectStoragePoolForContent(config.StorageContentImages, pool.ID, required)
-				if err != nil || selected.ID == pool.ID {
-					return selected, err
-				}
-				break
-			}
-		}
-	}
-	return config.SelectStoragePoolForContent(config.StorageContentImages, "", dirSizeBytes(lxcImageCachePath)+required)
 }
 
 type lxcImageDownloadCommandResult struct {
@@ -1110,7 +1075,7 @@ func HandleImageCancel(w http.ResponseWriter, r *http.Request) {
 		os.Remove(kvm.ImagePath(image.ID) + ".tmp")
 		os.Remove(kvm.ImagePath(image.ID))
 	}
-	if tmpl := lxc.FindTemplate(req.TemplateID); tmpl != nil && !tmpl.Custom && tmpl.Proxmox == nil {
+	if tmpl := lxc.FindTemplate(req.TemplateID); tmpl != nil && !tmpl.Custom {
 		go cleanupLXCImageDownloadTemp(tmpl.ID)
 	}
 	jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Cancel requested"})
@@ -1158,11 +1123,12 @@ func HandleImageDelete(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusNotFound, APIResponse{Success: false, Message: "Template not found"})
 		return
 	}
-	if tmpl.Proxmox != nil && imageHasActiveTask(tmpl.ID) {
+	archiveCached, _ := lxc.RootfsArchiveDownloadedInfo(tmpl.ID)
+	if archiveCached && !tmpl.Custom && imageHasActiveTask(tmpl.ID) {
 		jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: "Image is referenced by an active task"})
 		return
 	}
-	if tmpl.Custom || tmpl.Proxmox != nil {
+	if tmpl.Custom || archiveCached {
 		if err := lxc.DeleteRootfsArchive(tmpl.ID); err != nil {
 			jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: "Failed to delete image cache: " + err.Error()})
 			return
@@ -1274,7 +1240,7 @@ func HandleEnabledImages(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		for _, t := range lxc.GetTemplates() {
+		for _, t := range lxc.KnownTemplates() {
 			if subUser != nil && !isImageAllowedForSubUser(subUser, targetContainer, t.ID) {
 				continue
 			}
@@ -1365,7 +1331,7 @@ func ensureImageEnabled(id string) {
 	// If the enabled list is empty, all templates are currently enabled by default.
 	// We must populate the list with all template IDs first so that explicit toggles stick.
 	if len(config.AppConfig.EnabledImages) == 0 {
-		for _, t := range lxc.GetTemplates() {
+		for _, t := range lxc.KnownTemplates() {
 			config.AppConfig.EnabledImages = append(config.AppConfig.EnabledImages, t.ID)
 		}
 		for _, t := range kvm.GetImages() {
@@ -1391,7 +1357,7 @@ func removeImageEnabled(id string) {
 	// If the enabled list is empty, populate it first with all templates,
 	// then remove the one being disabled.
 	if len(config.AppConfig.EnabledImages) == 0 {
-		for _, t := range lxc.GetTemplates() {
+		for _, t := range lxc.KnownTemplates() {
 			if t.ID != id {
 				config.AppConfig.EnabledImages = append(config.AppConfig.EnabledImages, t.ID)
 			}

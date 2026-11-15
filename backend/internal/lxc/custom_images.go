@@ -4,10 +4,8 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
-	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
-	"hash"
 	"io"
 	"os"
 	"os/exec"
@@ -38,13 +36,11 @@ func RootfsArchivePath(id string) string {
 
 func (template Template) rootfsArchivePath() string {
 	const cache = "/var/cache/lxc/download"
-	if template.Proxmox != nil {
-		return filepath.Join(cache, "proxmox", template.Arch, template.ID, "rootfs.tar")
-	}
 	if template.Custom {
 		return filepath.Join(cache, "custom", template.ID, "rootfs.tar")
 	}
-	return ""
+	// Existing mirror caches use this path. Native preset downloads use LXC's cache.
+	return filepath.Join(cache, "proxmox", template.Arch, template.ID, "rootfs.tar")
 }
 
 func RootfsArchiveDownloadedInfo(id string) (bool, int64) {
@@ -80,6 +76,9 @@ func DeleteRootfsArchive(id string) error {
 }
 
 func DownloadRootfsArchiveWithProgress(ctx context.Context, template Template, progress CustomImageDownloadProgressFunc) error {
+	if !template.Custom {
+		return fmt.Errorf("custom LXC template required for archive download")
+	}
 	target := RootfsArchivePath(template.ID)
 	if target == "" {
 		return fmt.Errorf("LXC rootfs archive is not managed by CLICD")
@@ -97,22 +96,14 @@ func downloadRootfsArchive(ctx context.Context, template Template, target string
 	tmp := target + ".tmp"
 	_ = os.Remove(tmp)
 	defer os.Remove(tmp)
-	var expectedBytes int64
-	if template.Proxmox != nil {
-		expectedBytes = template.Proxmox.SizeBytes
-	}
-	if err := downloadRootfs(ctx, template.URL, tmp, expectedBytes, progress); err != nil {
+	if err := downloadRootfs(ctx, template.URL, tmp, progress); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if template.Proxmox != nil {
-		if err := verifyRootfsChecksum(tmp, sha512.New(), "SHA-512", template.Proxmox.SHA512); err != nil {
-			return err
-		}
-	} else if template.SHA256 != "" {
-		if err := verifyRootfsChecksum(tmp, sha256.New(), "SHA-256", template.SHA256); err != nil {
+	if template.SHA256 != "" {
+		if err := verifyRootfsSHA256(tmp, template.SHA256); err != nil {
 			return err
 		}
 	}
@@ -131,7 +122,7 @@ func downloadRootfsArchive(ctx context.Context, template Template, target string
 	return os.Rename(tmp, target)
 }
 
-func downloadRootfs(ctx context.Context, sourceURL, target string, expectedBytes int64, progress CustomImageDownloadProgressFunc) error {
+func downloadRootfs(ctx context.Context, sourceURL, target string, progress CustomImageDownloadProgressFunc) error {
 	response, err := safehttp.Get(ctx, sourceURL, "CLICD/1.0 LXC image downloader", 30*time.Minute)
 	if err != nil {
 		return err
@@ -141,12 +132,6 @@ func downloadRootfs(ctx context.Context, sourceURL, target string, expectedBytes
 		return fmt.Errorf("download failed: %s", response.Status)
 	}
 	total := response.ContentLength
-	if expectedBytes > 0 {
-		if total >= 0 && total != expectedBytes {
-			return fmt.Errorf("rootfs download size mismatch: expected %d bytes, got %d", expectedBytes, total)
-		}
-		total = expectedBytes
-	}
 	file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
 	if err != nil {
 		return err
@@ -158,9 +143,6 @@ func downloadRootfs(ctx context.Context, sourceURL, target string, expectedBytes
 	for {
 		count, readErr := response.Body.Read(buffer)
 		if count > 0 {
-			if expectedBytes > 0 && downloaded+int64(count) > expectedBytes {
-				return fmt.Errorf("rootfs download exceeds the expected %d bytes", expectedBytes)
-			}
 			if _, err := file.Write(buffer[:count]); err != nil {
 				return err
 			}
@@ -188,24 +170,22 @@ func downloadRootfs(ctx context.Context, sourceURL, target string, expectedBytes
 			return readErr
 		}
 	}
-	if expectedBytes > 0 && downloaded != expectedBytes {
-		return fmt.Errorf("rootfs download size mismatch: expected %d bytes, got %d", expectedBytes, downloaded)
-	}
 	return file.Sync()
 }
 
-func verifyRootfsChecksum(filePath string, digest hash.Hash, algorithm, expected string) error {
+func verifyRootfsSHA256(filePath, expected string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+	digest := sha256.New()
 	if _, err := io.Copy(digest, file); err != nil {
 		return err
 	}
 	actual := hex.EncodeToString(digest.Sum(nil))
 	if !strings.EqualFold(actual, strings.TrimSpace(expected)) {
-		return fmt.Errorf("%s mismatch: expected %s, got %s", algorithm, expected, actual)
+		return fmt.Errorf("SHA-256 mismatch: expected %s, got %s", expected, actual)
 	}
 	return nil
 }

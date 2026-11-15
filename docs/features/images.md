@@ -60,6 +60,6 @@ systemd 部署可通过 `sudo systemctl edit clicd` 添加上述配置，再执�
 本项目不分发 Windows 系统镜像，也不提供绕过或规避 Windows 激活机制的功能。涉及 Windows 的下载链接应指向微软官方资源，使用者需要自行获得合法授权。
 
 
-## Proxmox VE 官方 LXC 模板
+## 内置 LXC 模板
 
-节点内置对应架构的 Proxmox VE 系统模板。下载前按压缩归档大小检查缓存空间，并预留 256 MiB。下载后验证固定版本的大小、SHA-512 和归档格式。已有 LXC 缓存可继续用于开通和重装。解压 `.tar.zst` 格式的节点需提供 `zstd`。[Proxmox VE 官方模板索引](http://download.proxmox.com/images/system/)
+内置模板使用节点的 LXC 原生下载流程。此前从镜像源下载的缓存仍可用于开通和重装。Alpine 3.24 的既有缓存可通过原模板 ID 使用。

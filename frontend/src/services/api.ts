@@ -879,6 +879,7 @@ export interface ImageInfo {
   format?: 'iso' | 'qcow2'
   manual_install?: boolean
   custom?: boolean
+  retired?: boolean
   sha256?: string
 }
 

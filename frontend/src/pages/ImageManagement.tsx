@@ -186,7 +186,7 @@ export default function ImageManagement() {
   const localImages = images.filter((img) => img.downloaded || img.downloading)
   const lxcImages = localImages.filter((img) => img.type === 'lxc')
   const kvmImages = localImages.filter((img) => img.type === 'kvm')
-  const failedImages = images.filter((img) => !!img.error && !img.downloading)
+  const failedImages = images.filter((img) => !!img.error && !img.downloading && !img.retired)
   const imageStorageReady = (storageInfo?.pools || []).some((pool) =>
     pool.enabled !== false && pool.available !== false && (pool.content_types || []).includes('images')
   )
@@ -290,7 +290,7 @@ export default function ImageManagement() {
       {uploadModalOpen && <ImageUploadModal arch={images.find(image => image.type === 'kvm')?.arch || 'amd64'} pools={storageInfo?.pools || []} onClose={() => setUploadModalOpen(false)} onUploaded={fetchImages} />}
       {downloadModalOpen && (
         <DownloadImagesModal
-          images={images}
+          images={images.filter((image) => !image.retired)}
           type={catalogType}
           onTypeChange={setCatalogType}
           onClose={() => setDownloadModalOpen(false)}

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -79,6 +80,40 @@ func TestImageRenameRoutesAreRetired(t *testing.T) {
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("%s returned %d, want 404", path, rec.Code)
 		}
+	}
+}
+
+func TestNativeDownloadCatalogRejectsRetiredMirrorPreset(t *testing.T) {
+	previous := config.AppConfig
+	t.Cleanup(func() { config.AppConfig = previous })
+	config.AppConfig = &config.ClicdConfig{JWTSecret: "native-image-catalog-test"}
+	mux := http.NewServeMux()
+	setupRoutes(mux)
+	authorization := "Bearer " + imageAccessToken(t, "")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/templates", nil)
+	req.Header.Set("Authorization", authorization)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	var response struct {
+		Data []struct{ ID, URL string }
+	}
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &response) != nil ||
+		len(response.Data) != 10 || response.Data[0].ID != "ubuntu-noble" || response.Data[5].ID != "alpine-3.21" {
+		t.Fatalf("unexpected template catalog: %d %s", rec.Code, rec.Body.String())
+	}
+
+	for _, template := range response.Data {
+		if template.ID == "alpine-3.24" || template.URL != "" {
+			t.Fatalf("unexpected download from the former mirror catalog: %+v", template)
+		}
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/images/download", strings.NewReader(`{"template_id":"alpine-3.24"}`))
+	req.Header.Set("Authorization", authorization)
+	rec = httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "retired from the download catalog") {
+		t.Fatalf("retired image download response = %d %s", rec.Code, rec.Body.String())
 	}
 }
 

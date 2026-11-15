@@ -2,6 +2,7 @@ package lxc
 
 import (
 	"runtime"
+	"slices"
 	"strings"
 
 	"clicd/internal/config"
@@ -9,21 +10,27 @@ import (
 
 // Template represents an LXC image template
 type Template struct {
-	ID          string        `json:"id"`
-	Name        string        `json:"name"`
-	Distro      string        `json:"distro"`
-	Release     string        `json:"release"`
-	Arch        string        `json:"arch"`
-	Variant     string        `json:"variant"`
-	Description string        `json:"description"`
-	URL         string        `json:"url,omitempty"`
-	SHA256      string        `json:"sha256,omitempty"`
-	Custom      bool          `json:"custom,omitempty"`
-	Proxmox     *ProxmoxImage `json:"-"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Distro      string `json:"distro"`
+	Release     string `json:"release"`
+	Arch        string `json:"arch"`
+	Variant     string `json:"variant"`
+	Description string `json:"description"`
+	URL         string `json:"url,omitempty"`
+	SHA256      string `json:"sha256,omitempty"`
+	Custom      bool   `json:"custom,omitempty"`
+	Retired     bool   `json:"-"`
 }
 
-// GetTemplates returns available LXC image templates (only verified working ones)
+// GetTemplates returns the templates currently offered for download.
 func GetTemplates() []Template {
+	return slices.DeleteFunc(KnownTemplates(), func(t Template) bool { return t.Retired })
+}
+
+// KnownTemplates also includes retired presets so existing image caches and
+// saved container templates can still be resolved by ID.
+func KnownTemplates() []Template {
 	arch := defaultTemplateArch()
 	templates := []Template{
 		{
@@ -57,11 +64,6 @@ func GetTemplates() []Template {
 			Description: "Alpine Linux 3.21",
 		},
 		{
-			ID: "alpine-3.24", Name: "Alpine 3.24",
-			Distro: "alpine", Release: "3.24", Arch: arch,
-			Description: "Alpine Linux 3.24",
-		},
-		{
 			ID: "centos-9-stream", Name: "CentOS 9 Stream",
 			Distro: "centos", Release: "9-Stream", Arch: arch,
 			Description: "CentOS 9 Stream",
@@ -81,12 +83,12 @@ func GetTemplates() []Template {
 			Distro: "rockylinux", Release: "10", Arch: arch,
 			Description: "Rocky Linux 10",
 		},
-	}
-	for i := range templates {
-		if image, ok := proxmoxImages[arch][templates[i].ID]; ok {
-			templates[i].Proxmox = &image
-			templates[i].URL = proxmoxImageURL + image.Filename
-		}
+		// This preset existed only in the former mirror catalog.
+		{
+			ID: "alpine-3.24", Name: "Alpine 3.24",
+			Distro: "alpine", Release: "3.24", Arch: arch,
+			Description: "Alpine Linux 3.24", Retired: true,
+		},
 	}
 	for _, custom := range config.ListCustomLXCImages() {
 		if custom.Arch != arch {
@@ -124,7 +126,7 @@ func defaultTemplateArch() string {
 
 // FindTemplate finds a template by ID
 func FindTemplate(id string) *Template {
-	templates := GetTemplates()
+	templates := KnownTemplates()
 	for _, t := range templates {
 		if t.ID == id {
 			return &t

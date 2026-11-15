@@ -1,7 +1,7 @@
 package lxc
 
 import (
-	"crypto/sha512"
+	"crypto/sha256"
 	"encoding/hex"
 	"os"
 	"path/filepath"
@@ -47,29 +47,28 @@ func TestRootfsArchivePathUsesAllowlistedID(t *testing.T) {
 	}
 }
 
-func TestProxmoxImagesUsePinnedHostArchitectureArchives(t *testing.T) {
-	arch := defaultTemplateArch()
-	var count int
-	for _, template := range GetTemplates() {
-		if template.Proxmox == nil {
-			continue
-		}
-		count++
-		image := template.Proxmox
-		digest, err := hex.DecodeString(image.SHA512)
-		if template.Custom || template.Arch != arch || !strings.Contains(image.Filename, "_"+arch+".tar.") ||
-			image.SizeBytes <= 0 || err != nil || len(digest) != sha512.Size ||
-			template.URL != proxmoxImageURL+image.Filename {
-			t.Errorf("%s has invalid Proxmox archive metadata", template.ID)
-		}
-		want := filepath.Join("/var/cache/lxc/download", "proxmox", arch, template.ID, "rootfs.tar")
-		if template.rootfsArchivePath() != want {
-			t.Errorf("%s has unexpected cache path: %s", template.ID, template.rootfsArchivePath())
+func TestNativePresetsKeepExistingMirrorCachePaths(t *testing.T) {
+	previous := config.AppConfig
+	t.Cleanup(func() { config.AppConfig = previous })
+	config.AppConfig = &config.ClicdConfig{}
+	available := GetTemplates()
+	if len(available) != 10 || available[0].ID != "ubuntu-noble" || available[5].ID != "alpine-3.21" {
+		t.Fatalf("unexpected built-in download catalog: %+v", available)
+	}
+	for _, template := range available {
+		if template.Retired || template.URL != "" {
+			t.Fatalf("template %s is not a native download", template.ID)
 		}
 	}
-	alpine := FindTemplate("alpine-3.24")
-	if count != len(proxmoxImages[arch]) || count == 0 || alpine == nil || alpine.Proxmox == nil {
-		t.Fatalf("unexpected Proxmox catalog for %s: %d images", arch, count)
+	old := FindTemplate("alpine-3.24")
+	if old == nil || !old.Retired || old.URL != "" {
+		t.Fatalf("expected retired cache-only metadata: %+v", old)
+	}
+	for _, id := range []string{old.ID, "debian-trixie"} {
+		want := filepath.Join("/var/cache/lxc/download", "proxmox", defaultTemplateArch(), id, "rootfs.tar")
+		if got := RootfsArchivePath(id); got != want {
+			t.Fatalf("legacy cache path = %q, want %q", got, want)
+		}
 	}
 }
 
@@ -90,12 +89,12 @@ func TestRootfsArchiveAcceptsPreviouslyRenamedCache(t *testing.T) {
 	if ready, size := rootfsArchiveInfo(archive); !ready || size != int64(len(data)) {
 		t.Fatal("previously renamed archive is unavailable through its cache path")
 	}
-	sum := sha512.Sum512(data)
-	if err := verifyRootfsChecksum(archive, sha512.New(), "SHA-512", hex.EncodeToString(sum[:])); err != nil {
+	sum := sha256.Sum256(data)
+	if err := verifyRootfsSHA256(archive, hex.EncodeToString(sum[:])); err != nil {
 		t.Fatal(err)
 	}
-	if err := verifyRootfsChecksum(archive, sha512.New(), "SHA-512", strings.Repeat("0", 128)); err == nil {
-		t.Fatal("wrong SHA-512 passed verification")
+	if err := verifyRootfsSHA256(archive, strings.Repeat("0", 64)); err == nil {
+		t.Fatal("wrong SHA-256 passed verification")
 	}
 }
 
