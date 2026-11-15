@@ -635,7 +635,7 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 		lxcName, id, tmpl.Distro, tmpl.Release, tmpl.Arch)
 
 	cfg.ReportProgress("rootfs", "下载模板并创建基础文件系统")
-	if tmpl.Custom {
+	if archive := tmpl.rootfsArchiveForInstall(); archive != "" {
 		output, err := exec.Command("lxc-create", "-n", lxcName, "-t", "none").CombinedOutput()
 		if err != nil {
 			return fmt.Errorf("lxc-create failed for custom rootfs: %v, output: %s", err, string(output))
@@ -644,7 +644,7 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 			_ = m.cleanupContainerStorage(lxcName)
 			return err
 		}
-		if err := ExtractCustomRootfs(tmpl.ID, filepath.Join(containerDir, "rootfs")); err != nil {
+		if err := extractRootfsArchive(archive, filepath.Join(containerDir, "rootfs")); err != nil {
 			_ = m.cleanupContainerStorage(lxcName)
 			return err
 		}
@@ -660,11 +660,6 @@ func (m *Manager) CreateContainer(cfg ContainerConfig) error {
 			return fmt.Errorf("lxc-create failed: %v, output: %s", err, string(output))
 		}
 	}
-	if err := ApplyImageArchiveName(*tmpl); err != nil {
-		_ = m.cleanupContainerStorage(lxcName)
-		return fmt.Errorf("failed to preserve template archive name: %w", err)
-	}
-
 	cfg.ReportProgress("storage", "复制容器数据到存储磁盘")
 	storagePoolID, storagePath, err := m.moveContainerToStoragePool(lxcName, cfg.StoragePoolID)
 	if err != nil {
@@ -3670,11 +3665,11 @@ func (m *Manager) replaceRootfsFromTemplate(lxcName string, tmpl *Template) erro
 	defer m.cleanupTemporaryContainer(tmpName)
 
 	tmpRootfs := filepath.Join(tmpDir, "rootfs")
-	if tmpl.Custom {
+	if archive := tmpl.rootfsArchiveForInstall(); archive != "" {
 		if err := os.MkdirAll(tmpRootfs, 0755); err != nil {
 			return err
 		}
-		if err := ExtractCustomRootfs(tmpl.ID, tmpRootfs); err != nil {
+		if err := extractRootfsArchive(archive, tmpRootfs); err != nil {
 			return err
 		}
 	} else {
@@ -3694,10 +3689,6 @@ func (m *Manager) replaceRootfsFromTemplate(lxcName string, tmpl *Template) erro
 			return fmt.Errorf("failed to download replacement rootfs: %v, output: %s", err, string(output))
 		}
 	}
-	if err := ApplyImageArchiveName(*tmpl); err != nil {
-		return fmt.Errorf("failed to preserve template archive name: %w", err)
-	}
-
 	if !rootfsHasInit(tmpRootfs) {
 		return fmt.Errorf("downloaded replacement rootfs is invalid: init not found")
 	}

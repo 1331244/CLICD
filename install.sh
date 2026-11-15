@@ -573,6 +573,7 @@ remove_clicd_lxc_image_cache() {
         rmdir "/var/cache/lxc/download/$distro" >/dev/null 2>&1 || true
     done
 
+    remove_path /var/cache/lxc/download/proxmox
     rmdir /var/cache/lxc/download >/dev/null 2>&1 || true
     rmdir /var/cache/lxc >/dev/null 2>&1 || true
 }
@@ -1070,6 +1071,7 @@ install_apk() {
         wget \
         tar \
         gzip \
+        zstd \
         xz \
         python3 \
         lxc \
@@ -1112,6 +1114,7 @@ install_apt() {
         wget \
         tar \
         gzip \
+        zstd \
         xz-utils \
         python3 \
         lxc \
@@ -1171,6 +1174,7 @@ install_dnf() {
         wget \
         tar \
         gzip \
+        zstd \
         xz \
         python3 \
         lxc \
@@ -1216,6 +1220,7 @@ install_yum() {
         wget \
         tar \
         gzip \
+        zstd \
         xz \
         python3 \
         lxc \

@@ -104,7 +104,7 @@ func HandleWHMCS(w http.ResponseWriter, r *http.Request) {
 	if path == "capabilities" && r.Method == "GET" {
 		start, end := config.NATPortRange()
 		portRange := map[string]int{"start": start, "end": end}
-		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"version": "1", "virtualization": "lxc", "billing_reasons": true, "cpu_percent": true, "swap_mb": true, "ssh_key_offline": true, "conditional_mappings": true, "uuid_tickets": true, "paid_traffic_reset": true, "traffic_quota_2mbps": lxc.WHMCSTrafficQuotaAvailable(), "image_rename": true, "manual_port_mappings": true, "fixed_port_allocations": true, "instance_display_name": true, "instance_system_hostname": true, "nat4_port_range": portRange, "nat6_port_range": portRange, "instance_epoch": whmcsInstanceEpoch}})
+		jsonResponse(w, 200, APIResponse{Success: true, Data: map[string]interface{}{"version": "1", "virtualization": "lxc", "billing_reasons": true, "cpu_percent": true, "swap_mb": true, "ssh_key_offline": true, "conditional_mappings": true, "uuid_tickets": true, "paid_traffic_reset": true, "traffic_quota_2mbps": lxc.WHMCSTrafficQuotaAvailable(), "manual_port_mappings": true, "fixed_port_allocations": true, "instance_display_name": true, "instance_system_hostname": true, "nat4_port_range": portRange, "nat6_port_range": portRange, "instance_epoch": whmcsInstanceEpoch}})
 		return
 	}
 	parts := strings.Split(path, "/")

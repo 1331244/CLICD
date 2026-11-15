@@ -9,17 +9,17 @@ import (
 
 // Template represents an LXC image template
 type Template struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Distro      string `json:"distro"`
-	Release     string `json:"release"`
-	Arch        string `json:"arch"`
-	Variant     string `json:"variant"`
-	Description string `json:"description"`
-	URL         string `json:"url,omitempty"`
-	SHA256      string `json:"sha256,omitempty"`
-	Custom      bool   `json:"custom,omitempty"`
-	Filename    string `json:"filename,omitempty"`
+	ID          string        `json:"id"`
+	Name        string        `json:"name"`
+	Distro      string        `json:"distro"`
+	Release     string        `json:"release"`
+	Arch        string        `json:"arch"`
+	Variant     string        `json:"variant"`
+	Description string        `json:"description"`
+	URL         string        `json:"url,omitempty"`
+	SHA256      string        `json:"sha256,omitempty"`
+	Custom      bool          `json:"custom,omitempty"`
+	Proxmox     *ProxmoxImage `json:"-"`
 }
 
 // GetTemplates returns available LXC image templates (only verified working ones)
@@ -57,6 +57,11 @@ func GetTemplates() []Template {
 			Description: "Alpine Linux 3.21",
 		},
 		{
+			ID: "alpine-3.24", Name: "Alpine 3.24",
+			Distro: "alpine", Release: "3.24", Arch: arch,
+			Description: "Alpine Linux 3.24",
+		},
+		{
 			ID: "centos-9-stream", Name: "CentOS 9 Stream",
 			Distro: "centos", Release: "9-Stream", Arch: arch,
 			Description: "CentOS 9 Stream",
@@ -77,6 +82,12 @@ func GetTemplates() []Template {
 			Description: "Rocky Linux 10",
 		},
 	}
+	for i := range templates {
+		if image, ok := proxmoxImages[arch][templates[i].ID]; ok {
+			templates[i].Proxmox = &image
+			templates[i].URL = proxmoxImageURL + image.Filename
+		}
+	}
 	for _, custom := range config.ListCustomLXCImages() {
 		if custom.Arch != arch {
 			continue
@@ -94,17 +105,9 @@ func GetTemplates() []Template {
 		})
 	}
 	names := config.ImageNameOverrides()
-	filenames := config.ImageCacheFilenames()
 	for index := range templates {
 		if name := names[templates[index].ID]; name != "" {
 			templates[index].Name = name
-		}
-		templates[index].Filename = filenames[templates[index].ID]
-		if templates[index].Filename == "" {
-			templates[index].Filename = "rootfs.tar.xz"
-			if templates[index].Custom {
-				templates[index].Filename = "rootfs.tar"
-			}
 		}
 	}
 	return templates

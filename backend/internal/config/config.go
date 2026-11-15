@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -822,7 +823,6 @@ type ClicdConfig struct {
 	CustomKVMImages      []CustomKVMImage       `json:"custom_kvm_images"`
 	CustomLXCImages      []CustomLXCImage       `json:"custom_lxc_images"`
 	NameOverrides        map[string]string      `json:"image_name_overrides,omitempty"`
-	ImageFiles           map[string]string      `json:"image_cache_filenames,omitempty"`
 	Snapshots            []Snapshot             `json:"snapshots"`
 	PublicIPv4Pool       []PublicIPv4Assignment `json:"public_ipv4_pool"`
 	PublicIPv6Prefixes   []PublicIPv6Prefix     `json:"public_ipv6_prefixes"`
@@ -1584,6 +1584,16 @@ func ListCustomLXCImages() []CustomLXCImage {
 	return append([]CustomLXCImage(nil), AppConfig.CustomLXCImages...)
 }
 
+// ImageNameOverrides preserves labels already saved by earlier releases.
+func ImageNameOverrides() map[string]string {
+	allocationMu.Lock()
+	defer allocationMu.Unlock()
+	if AppConfig == nil {
+		return nil
+	}
+	return maps.Clone(AppConfig.NameOverrides)
+}
+
 func AddCustomLXCImage(image CustomLXCImage) error {
 	allocationMu.Lock()
 	defer allocationMu.Unlock()
@@ -1617,16 +1627,12 @@ func RemoveCustomLXCImage(id string) (bool, error) {
 	}
 	previous := AppConfig.CustomLXCImages
 	previousNames := AppConfig.NameOverrides
-	previousFiles := AppConfig.ImageFiles
 	AppConfig.CustomLXCImages = filtered
-	AppConfig.NameOverrides = copyImageNameOverrides(previousNames)
-	AppConfig.ImageFiles = copyImageNameOverrides(previousFiles)
+	AppConfig.NameOverrides = maps.Clone(previousNames)
 	delete(AppConfig.NameOverrides, id)
-	delete(AppConfig.ImageFiles, id)
 	if err := SaveConfig(); err != nil {
 		AppConfig.CustomLXCImages = previous
 		AppConfig.NameOverrides = previousNames
-		AppConfig.ImageFiles = previousFiles
 		return false, err
 	}
 	return true, nil

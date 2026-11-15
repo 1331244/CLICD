@@ -26,7 +26,7 @@ import (
 type ImageInfo struct {
 	ID              string  `json:"id"`
 	Name            string  `json:"name"`
-	Filename        string  `json:"filename,omitempty"`
+	Proxmox         bool    `json:"proxmox,omitempty"`
 	Type            string  `json:"type"`
 	Distro          string  `json:"distro"`
 	Release         string  `json:"release"`
@@ -59,6 +59,8 @@ var imageDownloadsMu sync.Mutex
 var imageDownloads = map[string]*imageDownloadStatus{}
 var lxcImageCacheMu sync.Mutex
 var imageMetadataMu sync.Mutex
+
+const lxcImageCachePath = "/var/cache/lxc/download"
 
 type lxcImageDownloadTask struct {
 	template lxc.Template
@@ -182,7 +184,7 @@ func enqueueLXCImageDownload(tmpl lxc.Template) (queued bool, ok bool) {
 	}
 
 	startStage := "lxc-create"
-	if tmpl.Custom {
+	if tmpl.Custom || tmpl.Proxmox != nil {
 		startStage = "downloading"
 	}
 
@@ -256,7 +258,7 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 		lxcActiveDownload = nextTask
 		if nextTask != nil {
 			stage := "lxc-create"
-			if nextTask.template.Custom {
+			if nextTask.template.Custom || nextTask.template.Proxmox != nil {
 				stage = "downloading"
 			}
 			updateImageDownload(nextTask.template.ID, func(st *imageDownloadStatus) {
@@ -267,8 +269,20 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 		lxcDownloadQueueMu.Unlock()
 	}()
 
-	if tmpl.Custom {
-		err := lxc.DownloadCustomImageWithProgress(ctx, tmpl, func(progress lxc.CustomImageDownloadProgress) {
+	if tmpl.Proxmox != nil {
+		pool, err := selectLXCImageDownloadPool(tmpl)
+		if err != nil {
+			finishImageDownload(tmpl.ID, err)
+			return
+		}
+		current, err := filepath.EvalSymlinks(lxcImageCachePath)
+		if err != nil || current != filepath.Join(pool.Path, "images", "lxc") {
+			finishImageDownload(tmpl.ID, fmt.Errorf("LXC image cache storage changed, retry the download"))
+			return
+		}
+	}
+	if tmpl.Custom || tmpl.Proxmox != nil {
+		err := lxc.DownloadRootfsArchiveWithProgress(ctx, tmpl, func(progress lxc.CustomImageDownloadProgress) {
 			updateImageDownload(tmpl.ID, func(status *imageDownloadStatus) {
 				status.Stage = progress.Stage
 				status.DownloadedBytes = progress.DownloadedBytes
@@ -278,15 +292,9 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 		})
 		if err != nil {
 			if ctx.Err() != nil {
-				_ = os.Remove(lxc.CustomImagePath(tmpl.ID) + ".tmp")
-				_ = os.Remove(lxc.CustomImagePath(tmpl.ID))
 				finishImageDownload(tmpl.ID, nil)
 				return
 			}
-			finishImageDownload(tmpl.ID, err)
-			return
-		}
-		if err := lxc.ApplyImageArchiveName(tmpl); err != nil {
 			finishImageDownload(tmpl.ID, err)
 			return
 		}
@@ -317,10 +325,6 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 			return
 		}
 		err = fmt.Errorf("Download failed: %v, output: %s", err, string(output))
-		finishImageDownload(tmpl.ID, err)
-		return
-	}
-	if err := lxc.ApplyImageArchiveName(tmpl); err != nil {
 		finishImageDownload(tmpl.ID, err)
 		return
 	}
@@ -377,7 +381,7 @@ func officialLXCImageCachePath(templateID string) (string, bool) {
 	if runtime.GOARCH == "arm64" {
 		arch = "arm64"
 	}
-	base := "/var/cache/lxc/download"
+	base := lxcImageCachePath
 	switch templateID {
 	case "ubuntu-noble":
 		return filepath.Join(base, "ubuntu", "noble", arch), true
@@ -391,6 +395,8 @@ func officialLXCImageCachePath(templateID string) (string, bool) {
 		return filepath.Join(base, "debian", "bullseye", arch), true
 	case "alpine-3.21":
 		return filepath.Join(base, "alpine", "3.21", arch), true
+	case "alpine-3.24":
+		return filepath.Join(base, "alpine", "3.24", arch), true
 	case "centos-9-stream":
 		return filepath.Join(base, "centos", "9-Stream", arch), true
 	case "archlinux-current":
@@ -406,7 +412,12 @@ func officialLXCImageCachePath(templateID string) (string, bool) {
 
 func lxcTemplateDownloadedInfo(template lxc.Template) (bool, int64) {
 	if template.Custom {
-		return lxc.CustomImageDownloadedInfo(template.ID)
+		return lxc.RootfsArchiveDownloadedInfo(template.ID)
+	}
+	if template.Proxmox != nil {
+		if downloaded, size := lxc.RootfsArchiveDownloadedInfo(template.ID); downloaded {
+			return true, size
+		}
 	}
 	return imageDownloadedInfo(template.ID)
 }
@@ -453,10 +464,13 @@ func HandleImages(w http.ResponseWriter, r *http.Request) {
 	for _, t := range templates {
 		dl := imageDownloadInfo(t.ID)
 		downloaded, size := lxcTemplateDownloadedInfo(t)
+		if !downloaded && t.Proxmox != nil {
+			size = t.Proxmox.SizeBytes
+		}
 		images = append(images, ImageInfo{
 			ID:              t.ID,
 			Name:            t.Name,
-			Filename:        lxc.CachedImageFilename(t),
+			Proxmox:         t.Proxmox != nil,
 			Type:            config.VirtualizationLXC,
 			Distro:          t.Distro,
 			Release:         t.Release,
@@ -744,7 +758,7 @@ func handleCustomKVMImageDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	var deleteErr error
 	if isCustomLXC {
-		deleteErr = lxc.DeleteCustomImage(req.ID)
+		deleteErr = lxc.DeleteRootfsArchive(req.ID)
 	} else {
 		deleteErr = kvm.DeleteImage(req.ID)
 	}
@@ -846,29 +860,20 @@ func HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusAccepted, APIResponse{Success: true, Message: "Download started"})
 		return
 	}
-	imagePool, err := config.SelectStoragePoolForContent(
-		config.StorageContentImages,
-		"",
-		dirSizeBytes("/var/cache/lxc/download")+1024*1024*1024,
-	)
+	if downloaded, _ := lxcTemplateDownloadedInfo(*tmpl); downloaded {
+		ensureImageEnabled(tmpl.ID)
+		clearImageDownload(tmpl.ID)
+		jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Already downloaded"})
+		return
+	}
+
+	imagePool, err := selectLXCImageDownloadPool(*tmpl)
 	if err != nil {
 		jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: err.Error()})
 		return
 	}
 	if err := ensureLXCImageCachePool(*imagePool); err != nil {
 		jsonResponse(w, http.StatusInternalServerError, APIResponse{Success: false, Message: err.Error()})
-		return
-	}
-
-	// Already downloaded? Just enable if needed.
-	if downloaded, _ := lxcTemplateDownloadedInfo(*tmpl); downloaded {
-		if err := lxc.ApplyImageArchiveName(*tmpl); err != nil {
-			jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: err.Error()})
-			return
-		}
-		ensureImageEnabled(tmpl.ID)
-		clearImageDownload(tmpl.ID)
-		jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Already downloaded"})
 		return
 	}
 
@@ -884,6 +889,28 @@ func HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonResponse(w, http.StatusAccepted, APIResponse{Success: true, Message: "Download started"})
+}
+
+func selectLXCImageDownloadPool(template lxc.Template) (*config.StoragePool, error) {
+	required := int64(1024 * 1024 * 1024)
+	if template.Proxmox != nil {
+		required = template.Proxmox.SizeBytes
+		// Existing cache files already count against free space on their disk.
+		// Include their size only when a move to a different pool is necessary.
+		if current, err := filepath.EvalSymlinks(lxcImageCachePath); err == nil {
+			for _, pool := range config.StoragePoolsForContent(config.StorageContentImages) {
+				if current != filepath.Join(pool.Path, "images", "lxc") {
+					continue
+				}
+				selected, err := config.SelectStoragePoolForContent(config.StorageContentImages, pool.ID, required)
+				if err != nil || selected.ID == pool.ID {
+					return selected, err
+				}
+				break
+			}
+		}
+	}
+	return config.SelectStoragePoolForContent(config.StorageContentImages, "", dirSizeBytes(lxcImageCachePath)+required)
 }
 
 type lxcImageDownloadCommandResult struct {
@@ -941,7 +968,7 @@ func ensureLXCImageCachePool(pool config.StoragePool) error {
 	lxcImageCacheMu.Lock()
 	defer lxcImageCacheMu.Unlock()
 
-	cachePath := "/var/cache/lxc/download"
+	cachePath := lxcImageCachePath
 	targetPath := filepath.Join(pool.Path, "images", "lxc")
 	targetAbs, err := filepath.Abs(targetPath)
 	if err != nil {
@@ -976,6 +1003,12 @@ func ensureLXCImageCachePool(pool config.StoragePool) error {
 	}
 	if sourceAbs == targetAbs {
 		return nil
+	}
+	lxcDownloadQueueMu.Lock()
+	downloading := lxcActiveDownload != nil
+	lxcDownloadQueueMu.Unlock()
+	if downloading {
+		return fmt.Errorf("LXC image cache cannot move during an active download")
 	}
 	if strings.HasPrefix(targetAbs, sourceAbs+string(os.PathSeparator)) || strings.HasPrefix(sourceAbs, targetAbs+string(os.PathSeparator)) {
 		return fmt.Errorf("LXC image cache source and target must not be nested")
@@ -1077,13 +1110,8 @@ func HandleImageCancel(w http.ResponseWriter, r *http.Request) {
 		os.Remove(kvm.ImagePath(image.ID) + ".tmp")
 		os.Remove(kvm.ImagePath(image.ID))
 	}
-	if tmpl := lxc.FindTemplate(req.TemplateID); tmpl != nil {
-		if tmpl.Custom {
-			_ = os.Remove(lxc.CustomImagePath(tmpl.ID) + ".tmp")
-			_ = os.Remove(lxc.CustomImagePath(tmpl.ID))
-		} else {
-			go cleanupLXCImageDownloadTemp(tmpl.ID)
-		}
+	if tmpl := lxc.FindTemplate(req.TemplateID); tmpl != nil && !tmpl.Custom && tmpl.Proxmox == nil {
+		go cleanupLXCImageDownloadTemp(tmpl.ID)
 	}
 	jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Cancel requested"})
 }
@@ -1130,14 +1158,20 @@ func HandleImageDelete(w http.ResponseWriter, r *http.Request) {
 		jsonResponse(w, http.StatusNotFound, APIResponse{Success: false, Message: "Template not found"})
 		return
 	}
-	if tmpl.Custom {
-		if err := lxc.DeleteCustomImage(tmpl.ID); err != nil {
+	if tmpl.Proxmox != nil && imageHasActiveTask(tmpl.ID) {
+		jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: "Image is referenced by an active task"})
+		return
+	}
+	if tmpl.Custom || tmpl.Proxmox != nil {
+		if err := lxc.DeleteRootfsArchive(tmpl.ID); err != nil {
 			jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: "Failed to delete image cache: " + err.Error()})
 			return
 		}
-		removeImageEnabled(tmpl.ID)
-		jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Deleted"})
-		return
+		if tmpl.Custom {
+			removeImageEnabled(tmpl.ID)
+			jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Deleted"})
+			return
+		}
 	}
 
 	// Remove cache directory

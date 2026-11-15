@@ -41,3 +41,7 @@ Preinstalled QCOW2 defaults to `manual-disk`, preserving its accounts and networ
 ## Windows Images
 
 This project does not distribute Windows system images and does not provide features to bypass or avoid Windows activation. Windows download links should point to official Microsoft resources, and users must obtain valid licenses themselves.
+
+## Official Proxmox VE LXC Templates
+
+CLICD includes selected Proxmox VE system templates for the host architecture. Before downloading, the node checks the compressed archive size plus 256 MiB of reserved space. It verifies the pinned size, SHA-512 and archive format before making the template available. Existing LXC caches remain available for provisioning and reinstalling guests. Nodes need `zstd` to read `.tar.zst` archives. [Official Proxmox VE template index](http://download.proxmox.com/images/system/)

@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"os/exec"
@@ -26,36 +28,67 @@ type CustomImageDownloadProgress struct {
 
 type CustomImageDownloadProgressFunc func(CustomImageDownloadProgress)
 
-func CustomImagePath(id string) string {
+func RootfsArchivePath(id string) string {
 	template := FindTemplate(id)
-	if template == nil || !template.Custom {
-		return filepath.Join("/var/cache/lxc/download/custom", "__invalid_image_id__", "rootfs.tar")
+	if template == nil {
+		return ""
 	}
-	return filepath.Join("/var/cache/lxc/download/custom", template.ID, "rootfs.tar")
+	return template.rootfsArchivePath()
 }
 
-func CustomImageDownloadedInfo(id string) (bool, int64) {
-	info, err := os.Stat(CustomImagePath(id))
-	if err != nil || info.IsDir() {
+func (template Template) rootfsArchivePath() string {
+	const cache = "/var/cache/lxc/download"
+	if template.Proxmox != nil {
+		return filepath.Join(cache, "proxmox", template.Arch, template.ID, "rootfs.tar")
+	}
+	if template.Custom {
+		return filepath.Join(cache, "custom", template.ID, "rootfs.tar")
+	}
+	return ""
+}
+
+func RootfsArchiveDownloadedInfo(id string) (bool, int64) {
+	return rootfsArchiveInfo(RootfsArchivePath(id))
+}
+
+func rootfsArchiveInfo(archive string) (bool, int64) {
+	info, err := os.Stat(archive)
+	if err != nil || !info.Mode().IsRegular() {
 		return false, 0
 	}
 	return true, info.Size()
 }
 
-func DeleteCustomImage(id string) error {
-	template := FindTemplate(id)
-	if template == nil || !template.Custom {
-		return fmt.Errorf("custom LXC image not found")
+// rootfsArchiveForInstall keeps native LXC caches usable across updates.
+func (template Template) rootfsArchiveForInstall() string {
+	archive := template.rootfsArchivePath()
+	if template.Custom {
+		return archive
 	}
-	return os.RemoveAll(filepath.Dir(CustomImagePath(id)))
+	if downloaded, _ := rootfsArchiveInfo(archive); downloaded {
+		return archive
+	}
+	return ""
 }
 
-func DownloadCustomImageWithProgress(ctx context.Context, template Template, progress CustomImageDownloadProgressFunc) error {
-	if !template.Custom {
-		return fmt.Errorf("template is not a custom LXC image")
+func DeleteRootfsArchive(id string) error {
+	archive := RootfsArchivePath(id)
+	if archive == "" {
+		return fmt.Errorf("LXC rootfs archive is not managed by CLICD")
 	}
-	target := CustomImagePath(template.ID)
-	if ok, _ := CustomImageDownloadedInfo(template.ID); ok {
+	return os.RemoveAll(filepath.Dir(archive))
+}
+
+func DownloadRootfsArchiveWithProgress(ctx context.Context, template Template, progress CustomImageDownloadProgressFunc) error {
+	target := RootfsArchivePath(template.ID)
+	if target == "" {
+		return fmt.Errorf("LXC rootfs archive is not managed by CLICD")
+	}
+	return downloadRootfsArchive(ctx, template, target, progress)
+}
+
+func downloadRootfsArchive(ctx context.Context, template Template, target string, progress CustomImageDownloadProgressFunc) error {
+	if ok, _ := rootfsArchiveInfo(target); ok {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
@@ -63,17 +96,23 @@ func DownloadCustomImageWithProgress(ctx context.Context, template Template, pro
 	}
 	tmp := target + ".tmp"
 	_ = os.Remove(tmp)
-	if err := downloadCustomRootfs(ctx, template.URL, tmp, progress); err != nil {
-		_ = os.Remove(tmp)
+	defer os.Remove(tmp)
+	var expectedBytes int64
+	if template.Proxmox != nil {
+		expectedBytes = template.Proxmox.SizeBytes
+	}
+	if err := downloadRootfs(ctx, template.URL, tmp, expectedBytes, progress); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
-		_ = os.Remove(tmp)
 		return err
 	}
-	if template.SHA256 != "" {
-		if err := verifyCustomRootfsSHA256(tmp, template.SHA256); err != nil {
-			_ = os.Remove(tmp)
+	if template.Proxmox != nil {
+		if err := verifyRootfsChecksum(tmp, sha512.New(), "SHA-512", template.Proxmox.SHA512); err != nil {
+			return err
+		}
+	} else if template.SHA256 != "" {
+		if err := verifyRootfsChecksum(tmp, sha256.New(), "SHA-256", template.SHA256); err != nil {
 			return err
 		}
 	}
@@ -81,17 +120,18 @@ func DownloadCustomImageWithProgress(ctx context.Context, template Template, pro
 		progress(CustomImageDownloadProgress{Stage: "validating", Percent: 100})
 	}
 	if err := ValidateCustomRootfsArchive(tmp); err != nil {
-		_ = os.Remove(tmp)
 		return err
 	}
-	if err := os.Rename(tmp, target); err != nil {
-		_ = os.Remove(tmp)
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return os.Chmod(target, 0644)
+	if err := os.Chmod(tmp, 0644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, target)
 }
 
-func downloadCustomRootfs(ctx context.Context, sourceURL, target string, progress CustomImageDownloadProgressFunc) error {
+func downloadRootfs(ctx context.Context, sourceURL, target string, expectedBytes int64, progress CustomImageDownloadProgressFunc) error {
 	response, err := safehttp.Get(ctx, sourceURL, "CLICD/1.0 LXC image downloader", 30*time.Minute)
 	if err != nil {
 		return err
@@ -100,18 +140,27 @@ func downloadCustomRootfs(ctx context.Context, sourceURL, target string, progres
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("download failed: %s", response.Status)
 	}
-	file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0600)
+	total := response.ContentLength
+	if expectedBytes > 0 {
+		if total >= 0 && total != expectedBytes {
+			return fmt.Errorf("rootfs download size mismatch: expected %d bytes, got %d", expectedBytes, total)
+		}
+		total = expectedBytes
+	}
+	file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
 
-	total := response.ContentLength
 	buffer := make([]byte, 128*1024)
 	var downloaded int64
 	for {
 		count, readErr := response.Body.Read(buffer)
 		if count > 0 {
+			if expectedBytes > 0 && downloaded+int64(count) > expectedBytes {
+				return fmt.Errorf("rootfs download exceeds the expected %d bytes", expectedBytes)
+			}
 			if _, err := file.Write(buffer[:count]); err != nil {
 				return err
 			}
@@ -139,22 +188,24 @@ func downloadCustomRootfs(ctx context.Context, sourceURL, target string, progres
 			return readErr
 		}
 	}
+	if expectedBytes > 0 && downloaded != expectedBytes {
+		return fmt.Errorf("rootfs download size mismatch: expected %d bytes, got %d", expectedBytes, downloaded)
+	}
 	return file.Sync()
 }
 
-func verifyCustomRootfsSHA256(filePath, expected string) error {
+func verifyRootfsChecksum(filePath string, digest hash.Hash, algorithm, expected string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	hash := sha256.New()
-	if _, err := io.Copy(hash, file); err != nil {
+	if _, err := io.Copy(digest, file); err != nil {
 		return err
 	}
-	actual := hex.EncodeToString(hash.Sum(nil))
+	actual := hex.EncodeToString(digest.Sum(nil))
 	if !strings.EqualFold(actual, strings.TrimSpace(expected)) {
-		return fmt.Errorf("SHA-256 mismatch: expected %s, got %s", expected, actual)
+		return fmt.Errorf("%s mismatch: expected %s, got %s", algorithm, expected, actual)
 	}
 	return nil
 }
@@ -221,14 +272,9 @@ func validateCustomRootfsEntries(entries []string) error {
 	return nil
 }
 
-func ExtractCustomRootfs(templateID, destination string) error {
-	template := FindTemplate(templateID)
-	if template == nil || !template.Custom {
-		return fmt.Errorf("custom LXC image not found: %s", templateID)
-	}
-	archive := CustomImagePath(template.ID)
-	if ok, _ := CustomImageDownloadedInfo(template.ID); !ok {
-		return fmt.Errorf("custom LXC image is not downloaded: %s", templateID)
+func extractRootfsArchive(archive, destination string) error {
+	if ok, _ := rootfsArchiveInfo(archive); !ok {
+		return fmt.Errorf("LXC rootfs image is not downloaded")
 	}
 	if err := ValidateCustomRootfsArchive(archive); err != nil {
 		return err

@@ -60,10 +60,6 @@ systemd 部署可通过 `sudo systemctl edit clicd` 添加上述配置，再执�
 本项目不分发 Windows 系统镜像，也不提供绕过或规避 Windows 激活机制的功能。涉及 Windows 的下载链接应指向微软官方资源，使用者需要自行获得合法授权。
 
 
-## LXC 镜像名称与归档文件名
+## Proxmox VE 官方 LXC 模板
 
-管理员可通过 `PUT /api/v1/images/rename`（兼容 `/api/images/rename`）提交 `{"template_id":"镜像ID","name":"Alpine 3.24"}`，同时修改已下载 LXC 镜像的显示名与真实归档文件名。需要管理员身份和 `image:toggle` 权限；内置模板与第三方镜像均支持，镜像 ID、下载来源、校验值和容器引用保持不变。接口及镜像目录的 `filename` 返回真实文件名，不包含节点存储路径。
-
-节点按归档内容检测 `.tar.xz`、`.tar.gz`、`.tar.zst`、`.tar.bz2` 或 `.tar` 后缀；例如输入 `Alpine 3.24` 后真实文件为 `Alpine 3.24.tar.xz`。名称不允许路径、控制字符或文件名特殊字符，不能覆盖已有无关文件。下载中或被待执行/运行中任务引用时拒绝改名。
-
-原生缓存入口保留为同目录相对链接，以兼容 LXC 开通、重装和读取；真实归档使用新名称，改名失败或元数据保存失败会回滚。名称映射持久保存，删除缓存后重新下载会恢复该名称。删除第三方来源时一并移除其名称与文件名映射。
+节点内置对应架构的 Proxmox VE 系统模板。下载前按压缩归档大小检查缓存空间，并预留 256 MiB。下载后验证固定版本的大小、SHA-512 和归档格式。已有 LXC 缓存可继续用于开通和重装。解压 `.tar.zst` 格式的节点需提供 `zstd`。[Proxmox VE 官方模板索引](http://download.proxmox.com/images/system/)
