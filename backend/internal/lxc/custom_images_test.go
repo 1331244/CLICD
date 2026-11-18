@@ -51,24 +51,71 @@ func TestNativePresetsKeepExistingMirrorCachePaths(t *testing.T) {
 	previous := config.AppConfig
 	t.Cleanup(func() { config.AppConfig = previous })
 	config.AppConfig = &config.ClicdConfig{}
-	available := GetTemplates()
-	if len(available) != 10 || available[0].ID != "ubuntu-noble" || available[5].ID != "alpine-3.21" {
-		t.Fatalf("unexpected built-in download catalog: %+v", available)
-	}
-	for _, template := range available {
-		if template.Retired || template.URL != "" {
-			t.Fatalf("template %s is not a native download", template.ID)
+	var native []Template
+	for _, template := range GetTemplates() {
+		if !template.DownloadsRootfsArchive() {
+			native = append(native, template)
 		}
 	}
-	old := FindTemplate("alpine-3.24")
-	if old == nil || !old.Retired || old.URL != "" {
-		t.Fatalf("expected retired cache-only metadata: %+v", old)
+	if len(native) != 10 || native[0].ID != "ubuntu-noble" || native[5].ID != "alpine-3.21" {
+		t.Fatalf("unexpected native download catalog: %+v", native)
 	}
-	for _, id := range []string{old.ID, "debian-trixie"} {
+	for _, id := range []string{"alpine-3.24", "debian-trixie"} {
 		want := filepath.Join("/var/cache/lxc/download", "proxmox", defaultTemplateArch(), id, "rootfs.tar")
 		if got := RootfsArchivePath(id); got != want {
 			t.Fatalf("legacy cache path = %q, want %q", got, want)
 		}
+	}
+}
+
+func TestProxmoxAlpinePresetsUseFixedArchives(t *testing.T) {
+	templates := proxmoxAlpineTemplates("amd64")
+	want := map[string]string{
+		"alpine-3.24": "alpine-3.24-default_20261105_amd64.tar.xz",
+		"alpine-3.23": "alpine-3.23-default_20261105_amd64.tar.xz",
+		"alpine-3.22": "alpine-3.22-default_20250617_amd64.tar.xz",
+	}
+	for _, template := range templates {
+		file, ok := want[template.ID]
+		if !ok || template.Custom || template.Retired || template.Arch != "amd64" ||
+			!template.DownloadsRootfsArchive() || template.URL != proxmoxAlpineURL+file ||
+			template.ArchiveSizeBytes <= 0 {
+			t.Fatalf("unexpected Proxmox preset: %+v", template)
+		}
+		checksum, err := hex.DecodeString(template.SHA256)
+		if err != nil || len(checksum) != sha256.Size {
+			t.Fatalf("invalid checksum for %s", template.ID)
+		}
+		if template.rootfsArchiveForInstall() != template.rootfsArchivePath() {
+			t.Fatalf("%s must use its pinned archive for create and reinstall", template.ID)
+		}
+		delete(want, template.ID)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing presets: %v", want)
+	}
+
+	legacy := proxmoxAlpineTemplates("arm64")
+	if len(legacy) != 1 || legacy[0].ID != "alpine-3.24" || !legacy[0].Retired ||
+		legacy[0].DownloadsRootfsArchive() || legacy[0].Arch != "arm64" {
+		t.Fatalf("unexpected arm64 compatibility catalog: %+v", legacy)
+	}
+}
+
+func TestPinnedRootfsCacheRejectsTruncatedArchive(t *testing.T) {
+	archive := filepath.Join(t.TempDir(), "rootfs.tar")
+	if err := os.WriteFile(archive, []byte("partial"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	template := Template{ArchiveSizeBytes: 12}
+	if ready, _ := template.cachedRootfsArchiveInfo(archive); ready {
+		t.Fatal("truncated archive was reported as downloaded")
+	}
+	if err := os.WriteFile(archive, []byte("complete tar"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if ready, size := template.cachedRootfsArchiveInfo(archive); !ready || size != 12 {
+		t.Fatalf("pinned size was not recognized: ready=%t, size=%d", ready, size)
 	}
 }
 

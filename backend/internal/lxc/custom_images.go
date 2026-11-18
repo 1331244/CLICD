@@ -44,7 +44,19 @@ func (template Template) rootfsArchivePath() string {
 }
 
 func RootfsArchiveDownloadedInfo(id string) (bool, int64) {
-	return rootfsArchiveInfo(RootfsArchivePath(id))
+	template := FindTemplate(id)
+	if template == nil {
+		return false, 0
+	}
+	return template.cachedRootfsArchiveInfo(template.rootfsArchivePath())
+}
+
+func (template Template) cachedRootfsArchiveInfo(archive string) (bool, int64) {
+	downloaded, size := rootfsArchiveInfo(archive)
+	if template.ArchiveSizeBytes > 0 && size != template.ArchiveSizeBytes {
+		return false, 0
+	}
+	return downloaded, size
 }
 
 func rootfsArchiveInfo(archive string) (bool, int64) {
@@ -58,7 +70,7 @@ func rootfsArchiveInfo(archive string) (bool, int64) {
 // rootfsArchiveForInstall keeps native LXC caches usable across updates.
 func (template Template) rootfsArchiveForInstall() string {
 	archive := template.rootfsArchivePath()
-	if template.Custom {
+	if template.DownloadsRootfsArchive() {
 		return archive
 	}
 	if downloaded, _ := rootfsArchiveInfo(archive); downloaded {
@@ -76,8 +88,8 @@ func DeleteRootfsArchive(id string) error {
 }
 
 func DownloadRootfsArchiveWithProgress(ctx context.Context, template Template, progress CustomImageDownloadProgressFunc) error {
-	if !template.Custom {
-		return fmt.Errorf("custom LXC template required for archive download")
+	if !template.DownloadsRootfsArchive() {
+		return fmt.Errorf("LXC template has no direct archive source")
 	}
 	target := RootfsArchivePath(template.ID)
 	if target == "" {
@@ -87,7 +99,7 @@ func DownloadRootfsArchiveWithProgress(ctx context.Context, template Template, p
 }
 
 func downloadRootfsArchive(ctx context.Context, template Template, target string, progress CustomImageDownloadProgressFunc) error {
-	if ok, _ := rootfsArchiveInfo(target); ok {
+	if ok, _ := template.cachedRootfsArchiveInfo(target); ok {
 		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
@@ -96,7 +108,7 @@ func downloadRootfsArchive(ctx context.Context, template Template, target string
 	tmp := target + ".tmp"
 	_ = os.Remove(tmp)
 	defer os.Remove(tmp)
-	if err := downloadRootfs(ctx, template.URL, tmp, progress); err != nil {
+	if err := downloadRootfs(ctx, template.URL, tmp, template.ArchiveSizeBytes, progress); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
@@ -122,7 +134,7 @@ func downloadRootfsArchive(ctx context.Context, template Template, target string
 	return os.Rename(tmp, target)
 }
 
-func downloadRootfs(ctx context.Context, sourceURL, target string, progress CustomImageDownloadProgressFunc) error {
+func downloadRootfs(ctx context.Context, sourceURL, target string, expectedBytes int64, progress CustomImageDownloadProgressFunc) error {
 	response, err := safehttp.Get(ctx, sourceURL, "CLICD/1.0 LXC image downloader", 30*time.Minute)
 	if err != nil {
 		return err
@@ -132,6 +144,12 @@ func downloadRootfs(ctx context.Context, sourceURL, target string, progress Cust
 		return fmt.Errorf("download failed: %s", response.Status)
 	}
 	total := response.ContentLength
+	if expectedBytes > 0 {
+		if total >= 0 && total != expectedBytes {
+			return fmt.Errorf("rootfs download size mismatch: expected %d bytes, got %d", expectedBytes, total)
+		}
+		total = expectedBytes
+	}
 	file, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0600)
 	if err != nil {
 		return err
@@ -143,6 +161,9 @@ func downloadRootfs(ctx context.Context, sourceURL, target string, progress Cust
 	for {
 		count, readErr := response.Body.Read(buffer)
 		if count > 0 {
+			if expectedBytes > 0 && downloaded+int64(count) > expectedBytes {
+				return fmt.Errorf("rootfs download exceeds the expected %d bytes", expectedBytes)
+			}
 			if _, err := file.Write(buffer[:count]); err != nil {
 				return err
 			}
@@ -169,6 +190,9 @@ func downloadRootfs(ctx context.Context, sourceURL, target string, progress Cust
 		if readErr != nil {
 			return readErr
 		}
+	}
+	if expectedBytes > 0 && downloaded != expectedBytes {
+		return fmt.Errorf("rootfs download size mismatch: expected %d bytes, got %d", expectedBytes, downloaded)
 	}
 	return file.Sync()
 }

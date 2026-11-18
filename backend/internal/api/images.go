@@ -184,7 +184,7 @@ func enqueueLXCImageDownload(tmpl lxc.Template) (queued bool, ok bool) {
 	}
 
 	startStage := "lxc-create"
-	if tmpl.Custom {
+	if tmpl.DownloadsRootfsArchive() {
 		startStage = "downloading"
 	}
 
@@ -258,7 +258,7 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 		lxcActiveDownload = nextTask
 		if nextTask != nil {
 			stage := "lxc-create"
-			if nextTask.template.Custom {
+			if nextTask.template.DownloadsRootfsArchive() {
 				stage = "downloading"
 			}
 			updateImageDownload(nextTask.template.ID, func(st *imageDownloadStatus) {
@@ -269,7 +269,7 @@ func executeLXCImageDownload(task *lxcImageDownloadTask) {
 		lxcDownloadQueueMu.Unlock()
 	}()
 
-	if tmpl.Custom {
+	if tmpl.DownloadsRootfsArchive() {
 		err := lxc.DownloadRootfsArchiveWithProgress(ctx, tmpl, func(progress lxc.CustomImageDownloadProgress) {
 			updateImageDownload(tmpl.ID, func(status *imageDownloadStatus) {
 				status.Stage = progress.Stage
@@ -399,7 +399,7 @@ func officialLXCImageCachePath(templateID string) (string, bool) {
 }
 
 func lxcTemplateDownloadedInfo(template lxc.Template) (bool, int64) {
-	if downloaded, size := lxc.RootfsArchiveDownloadedInfo(template.ID); downloaded || template.Custom {
+	if downloaded, size := lxc.RootfsArchiveDownloadedInfo(template.ID); downloaded || template.DownloadsRootfsArchive() {
 		return downloaded, size
 	}
 	return imageDownloadedInfo(template.ID)
@@ -449,6 +449,9 @@ func HandleImages(w http.ResponseWriter, r *http.Request) {
 		downloaded, size := lxcTemplateDownloadedInfo(t)
 		if t.Retired && !downloaded {
 			continue
+		}
+		if !downloaded && t.ArchiveSizeBytes > 0 {
+			size = t.ArchiveSizeBytes
 		}
 		images = append(images, ImageInfo{
 			ID:              t.ID,
@@ -854,7 +857,11 @@ func HandleImageDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	imagePool, err := config.SelectStoragePoolForContent(config.StorageContentImages, "", dirSizeBytes(lxcImageCachePath)+1024*1024*1024)
+	required := tmpl.ArchiveSizeBytes
+	if required == 0 {
+		required = 1024 * 1024 * 1024
+	}
+	imagePool, err := config.SelectStoragePoolForContent(config.StorageContentImages, "", dirSizeBytes(lxcImageCachePath)+required)
 	if err != nil {
 		jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: err.Error()})
 		return
@@ -1075,7 +1082,7 @@ func HandleImageCancel(w http.ResponseWriter, r *http.Request) {
 		os.Remove(kvm.ImagePath(image.ID) + ".tmp")
 		os.Remove(kvm.ImagePath(image.ID))
 	}
-	if tmpl := lxc.FindTemplate(req.TemplateID); tmpl != nil && !tmpl.Custom {
+	if tmpl := lxc.FindTemplate(req.TemplateID); tmpl != nil && !tmpl.DownloadsRootfsArchive() {
 		go cleanupLXCImageDownloadTemp(tmpl.ID)
 	}
 	jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Cancel requested"})
@@ -1124,16 +1131,17 @@ func HandleImageDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	archiveCached, _ := lxc.RootfsArchiveDownloadedInfo(tmpl.ID)
-	if archiveCached && !tmpl.Custom && imageHasActiveTask(tmpl.ID) {
+	directArchive := tmpl.DownloadsRootfsArchive()
+	if !tmpl.Custom && (archiveCached || directArchive) && imageHasActiveTask(tmpl.ID) {
 		jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: "Image is referenced by an active task"})
 		return
 	}
-	if tmpl.Custom || archiveCached {
+	if directArchive || archiveCached {
 		if err := lxc.DeleteRootfsArchive(tmpl.ID); err != nil {
 			jsonResponse(w, http.StatusConflict, APIResponse{Success: false, Message: "Failed to delete image cache: " + err.Error()})
 			return
 		}
-		if tmpl.Custom {
+		if directArchive {
 			removeImageEnabled(tmpl.ID)
 			jsonResponse(w, http.StatusOK, APIResponse{Success: true, Message: "Deleted"})
 			return

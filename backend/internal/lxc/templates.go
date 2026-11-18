@@ -10,17 +10,23 @@ import (
 
 // Template represents an LXC image template
 type Template struct {
-	ID          string `json:"id"`
-	Name        string `json:"name"`
-	Distro      string `json:"distro"`
-	Release     string `json:"release"`
-	Arch        string `json:"arch"`
-	Variant     string `json:"variant"`
-	Description string `json:"description"`
-	URL         string `json:"url,omitempty"`
-	SHA256      string `json:"sha256,omitempty"`
-	Custom      bool   `json:"custom,omitempty"`
-	Retired     bool   `json:"-"`
+	ID               string `json:"id"`
+	Name             string `json:"name"`
+	Distro           string `json:"distro"`
+	Release          string `json:"release"`
+	Arch             string `json:"arch"`
+	Variant          string `json:"variant"`
+	Description      string `json:"description"`
+	URL              string `json:"url,omitempty"`
+	SHA256           string `json:"sha256,omitempty"`
+	ArchiveSizeBytes int64  `json:"-"`
+	Custom           bool   `json:"custom,omitempty"`
+	Retired          bool   `json:"-"`
+}
+
+// DownloadsRootfsArchive selects the direct archive download path.
+func (template Template) DownloadsRootfsArchive() bool {
+	return template.Custom || template.URL != ""
 }
 
 // GetTemplates returns the templates currently offered for download.
@@ -83,13 +89,8 @@ func KnownTemplates() []Template {
 			Distro: "rockylinux", Release: "10", Arch: arch,
 			Description: "Rocky Linux 10",
 		},
-		// This preset existed only in the former mirror catalog.
-		{
-			ID: "alpine-3.24", Name: "Alpine 3.24",
-			Distro: "alpine", Release: "3.24", Arch: arch,
-			Description: "Alpine Linux 3.24", Retired: true,
-		},
 	}
+	templates = append(templates, proxmoxAlpineTemplates(arch)...)
 	for _, custom := range config.ListCustomLXCImages() {
 		if custom.Arch != arch {
 			continue
@@ -113,6 +114,47 @@ func KnownTemplates() []Template {
 		}
 	}
 	return templates
+}
+
+const proxmoxAlpineURL = "http://download.proxmox.com/images/system/"
+
+func proxmoxAlpineTemplates(arch string) []Template {
+	if arch != "amd64" {
+		// Keep the former mirror's Alpine 3.24 cache resolvable on arm64.
+		return []Template{{
+			ID: "alpine-3.24", Name: "Alpine 3.24",
+			Distro: "alpine", Release: "3.24", Arch: arch,
+			Description: "Alpine Linux 3.24", Retired: true,
+		}}
+	}
+	// The archives were checked against the SHA-512 values in Proxmox's
+	// template indexes. Pin their SHA-256 values for the archive downloader.
+	return []Template{
+		{
+			ID: "alpine-3.24", Name: "Alpine 3.24",
+			Distro: "alpine", Release: "3.24", Arch: arch,
+			Description:      "Alpine Linux 3.24",
+			URL:              proxmoxAlpineURL + "alpine-3.24-default_20261105_amd64.tar.xz",
+			SHA256:           "159becb595d518c2defabfb4e57d2bdbab792faea539a40a6c5f6c057f900df9",
+			ArchiveSizeBytes: 3460064,
+		},
+		{
+			ID: "alpine-3.23", Name: "Alpine 3.23",
+			Distro: "alpine", Release: "3.23", Arch: arch,
+			Description:      "Alpine Linux 3.23",
+			URL:              proxmoxAlpineURL + "alpine-3.23-default_20261105_amd64.tar.xz",
+			SHA256:           "5fbd1ec2349c981c9cd7e92e4eb493049a8573aa3fe24ddf353d72247715bf0b",
+			ArchiveSizeBytes: 3450920,
+		},
+		{
+			ID: "alpine-3.22", Name: "Alpine 3.22",
+			Distro: "alpine", Release: "3.22", Arch: arch,
+			Description:      "Alpine Linux 3.22",
+			URL:              proxmoxAlpineURL + "alpine-3.22-default_20250617_amd64.tar.xz",
+			SHA256:           "a578804161ae16ecddbd74034862c061403b87b8487c43c255eb5287bd2eac15",
+			ArchiveSizeBytes: 3271244,
+		},
+	}
 }
 
 func defaultTemplateArch() string {

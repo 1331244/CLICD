@@ -44,4 +44,6 @@ This project does not distribute Windows system images and does not provide feat
 
 ## Built-in LXC Templates
 
-Built-in templates use LXC's native download process. Previously downloaded mirror caches remain usable for provisioning and reinstalling guests. Existing Alpine 3.24 caches are available through their original template ID.
+The amd64 Alpine 3.22, 3.23, and 3.24 presets use the fixed IDs `alpine-3.22`, `alpine-3.23`, and `alpine-3.24`. CLICD downloads and verifies the corresponding Proxmox archives.
+
+Other built-in templates use LXC's native download process. Provisioning and reinstalling guests can use existing mirror caches, including `alpine-3.24`.

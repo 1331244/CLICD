@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +84,7 @@ func TestImageRenameRoutesAreRetired(t *testing.T) {
 	}
 }
 
-func TestNativeDownloadCatalogRejectsRetiredMirrorPreset(t *testing.T) {
+func TestLXCDownloadCatalogIncludesOnlyRequestedProxmoxPresets(t *testing.T) {
 	previous := config.AppConfig
 	t.Cleanup(func() { config.AppConfig = previous })
 	config.AppConfig = &config.ClicdConfig{JWTSecret: "native-image-catalog-test"}
@@ -95,18 +96,65 @@ func TestNativeDownloadCatalogRejectsRetiredMirrorPreset(t *testing.T) {
 	req.Header.Set("Authorization", authorization)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
-	var response struct {
-		Data []struct{ ID, URL string }
+	type templateEntry struct {
+		ID, URL string
+		Custom  bool
+	}
+	var response struct{ Data []templateEntry }
+	want := map[string]string{}
+	if runtime.GOARCH == "amd64" {
+		want = map[string]string{
+			"alpine-3.24": "alpine-3.24-default_20261105_amd64.tar.xz",
+			"alpine-3.23": "alpine-3.23-default_20261105_amd64.tar.xz",
+			"alpine-3.22": "alpine-3.22-default_20250617_amd64.tar.xz",
+		}
 	}
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &response) != nil ||
-		len(response.Data) != 10 || response.Data[0].ID != "ubuntu-noble" || response.Data[5].ID != "alpine-3.21" {
+		len(response.Data) != 10+len(want) || response.Data[0].ID != "ubuntu-noble" || response.Data[5].ID != "alpine-3.21" {
 		t.Fatalf("unexpected template catalog: %d %s", rec.Code, rec.Body.String())
 	}
 
 	for _, template := range response.Data {
-		if template.ID == "alpine-3.24" || template.URL != "" {
-			t.Fatalf("unexpected download from the former mirror catalog: %+v", template)
+		url := ""
+		if file, ok := want[template.ID]; ok {
+			url = "http://download.proxmox.com/images/system/" + file
+			delete(want, template.ID)
 		}
+		if template.Custom || template.URL != url {
+			t.Fatalf("unexpected source for template: %+v", template)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing Proxmox presets: %v", want)
+	}
+	if runtime.GOARCH == "amd64" {
+		req = httptest.NewRequest(http.MethodGet, "/api/v1/images", nil)
+		req.Header.Set("Authorization", authorization)
+		rec = httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		var imageCatalog struct {
+			Data []struct {
+				ID, Type, Arch string
+				Custom         bool
+				SizeBytes      int64 `json:"size_bytes"`
+			}
+		}
+		if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &imageCatalog) != nil {
+			t.Fatalf("unexpected image catalog: %d %s", rec.Code, rec.Body.String())
+		}
+		wantSizes := map[string]int64{"alpine-3.24": 3460064, "alpine-3.23": 3450920, "alpine-3.22": 3271244}
+		for _, image := range imageCatalog.Data {
+			if size, ok := wantSizes[image.ID]; ok {
+				if image.Custom || image.Type != "lxc" || image.Arch != "amd64" || image.SizeBytes != size {
+					t.Fatalf("Proxmox archive is not displayed as a built-in LXC image: %+v", image)
+				}
+				delete(wantSizes, image.ID)
+			}
+		}
+		if len(wantSizes) != 0 {
+			t.Fatalf("missing images in the management catalog: %v", wantSizes)
+		}
+		return
 	}
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/images/download", strings.NewReader(`{"template_id":"alpine-3.24"}`))
 	req.Header.Set("Authorization", authorization)
